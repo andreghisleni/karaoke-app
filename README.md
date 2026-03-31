@@ -1,37 +1,45 @@
-🎤 Professional Karaoke System
-Sistema de Karaokê de alta performance desenvolvido para ambientes Linux, focado em estabilidade, fidelidade visual e integração com hardware de áudio e vídeo profissional. O sistema permite o controle total via dispositivos móveis e transmissão de sinal via rede.
+# 🎤 Professional Karaoke System
 
-🚀 Diferenciais Técnicos
-Motor Híbrido de Vídeo: Utiliza a robustez da libVLC para decodificação de hardware, com interceptação de frames em tempo real para transmissão via protocolo NDI.
+![Java](https://img.shields.io/badge/Java-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![VLC](https://img.shields.io/badge/VLC-FF8800?style=for-the-badge&logo=vlc&logoColor=white)
+![NDI](https://img.shields.io/badge/NDI-FF0000?style=for-the-badge&logo=ndi&logoColor=white)
 
-Interface Web Responsiva: Dashboard moderno para smartphones e tablets (React + TanStack Router), permitindo que os convidados busquem músicas e acompanhem a fila sem interromper a tela principal.
+Sistema de Karaokê de alta performance desenvolvido para ambientes Linux, focado em estabilidade, fidelidade visual e integração com hardware de áudio e vídeo profissional. O sistema permite o controlo total via dispositivos móveis e transmissão de sinal via rede.
 
-Sistema de Notas Dinâmico: Animações Java 2D com efeito de "roleta" de números, sincronizadas milimetricamente com efeitos sonoros de suspense extraídos automaticamente do pacote da aplicação.
+## 🚀 Diferenciais Técnicos
 
-Gestão de Áudio Avançada: Roteamento direto para dispositivos ALSA/USB (como mixers digitais), permitindo isolar o som do karaokê de outros sons do sistema.
+* **Motor Híbrido de Vídeo:** Utiliza a robustez da `libVLC` para descodificação de hardware, com interceção de frames em tempo real para transmissão via protocolo NDI.
+* **Interface Web Responsiva:** Dashboard moderno para smartphones e tablets (React + TanStack Router), permitindo que os convidados busquem músicas e acompanhem a fila sem interromper o ecrã principal.
+* **Sistema de Notas Dinâmico:** Animações Java 2D com efeito de "roleta" de números, sincronizadas milimetricamente com efeitos sonoros de suspense extraídos automaticamente do pacote da aplicação.
+* **Gestão de Áudio Avançada:** Roteamento direto para dispositivos ALSA/USB (como mixers digitais), permitindo isolar o som do karaokê de outros sons do sistema.
+* **Fidelidade de Cores:** Processamento manual de buffers de imagem para garantir a transição perfeita entre vídeos (BGRA) e gráficos gerados pelo Java (RGBA) no sinal de saída NDI.
 
-Fidelidade de Cores: Processamento manual de buffers de imagem para garantir a transição perfeita entre vídeos (BGRA) e gráficos gerados pelo Java (RGBA) no sinal de saída.
+---
 
-🛠️ Arquitetura do Sistema
-Backend: Java 22 + Javalin (Web Server & WebSockets para atualizações em tempo real).
+## 🛠️ Arquitetura do Sistema
 
-Video Engine: vlcj para controle fino do reprodutor.
+* **Backend:** Java 22 + Javalin (Web Server & WebSockets para atualizações em tempo real).
+* **Video Engine:** `vlcj` para controlo fino do reprodutor e renderização de tempo (Marquee).
+* **Stream de Vídeo:** `Devolay` (NDI SDK) para integração com softwares como Resolume Arena ou OBS Studio.
+* **Frontend:** React + Vite + Tailwind CSS + Shadcn/UI.
+* **Build System:** Maven para geração de Fat JAR autossuficiente.
 
-Stream de Vídeo: Devolay (NDI SDK) para integração com softwares como Resolume Arena ou OBS Studio.
+---
 
-Frontend: React + Vite + Tailwind CSS + Shadcn/UI.
+## 📋 Pré-requisitos (Linux)
 
-Monitoramento: Overlay nativo do VLC (Marquee) para exibição de tempo de reprodução.
-
-📋 Pré-requisitos (Linux)
 Para o correto funcionamento das bibliotecas nativas, é necessário:
 
-Bash
+```bash
 # Instalação do motor VLC e dependências de desenvolvimento
 sudo apt install libvlc-dev vlc
 
-# Certifique-se de que o NDI Runtime (libndi) está instalado no diretório de bibliotecas do sistema
-📦 Empacotamento e Distribuição
+```
+
+## Certifica-te de que o NDI Runtime (libndi) está instalado no diretório de bibliotecas do sistema
+
+# 📦 Empacotamento e Distribuição
 O projeto é consolidado em um Fat JAR único, facilitando a portabilidade.
 
 1. Preparação do Frontend
