@@ -1,0 +1,6 @@
+{
+  "pastas" : [ "/home/andre/Music/PASTA 10", "/home/andre/Videos/karaoke-test" ],
+  "audioDeviceId" : "alsa_output.usb-Shure_Inc_Shure_MV7-00.analog-stereo",
+  "videoOutputMode" : "Monitor",
+  "displayId" : "1"
+}

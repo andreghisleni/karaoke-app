@@ -1,0 +1,10 @@
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/Main.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/config/ConfigManager.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/controller/ApiController.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/model/AdicionarFilaRequest.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/model/AppConfig.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/model/Musica.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/model/RespostaPaginada.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/service/CatalogoService.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/service/PlayerService.java
+/home/andre/tmp/karaoke-app/src/main/java/br/com/andreg/karaoke/app/service/WebSocketService.java

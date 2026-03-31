@@ -1,0 +1,17 @@
+br/com/andreg/karaoke/app/service/WebSocketService.class
+br/com/andreg/karaoke/app/service/CatalogoService.class
+br/com/andreg/karaoke/app/service/PlayerService$AudioNotaConfig.class
+br/com/andreg/karaoke/app/model/Musica.class
+br/com/andreg/karaoke/app/service/CatalogoService$Metadado.class
+br/com/andreg/karaoke/app/model/AdicionarFilaRequest.class
+br/com/andreg/karaoke/app/controller/ApiController.class
+br/com/andreg/karaoke/app/model/AppConfig.class
+br/com/andreg/karaoke/app/service/PlayerService$3.class
+br/com/andreg/karaoke/app/Main.class
+br/com/andreg/karaoke/app/service/PlayerService$4.class
+br/com/andreg/karaoke/app/service/PlayerService$1.class
+br/com/andreg/karaoke/app/model/RespostaPaginada.class
+br/com/andreg/karaoke/app/service/PlayerService$2.class
+br/com/andreg/karaoke/app/service/PlayerService$TvPanel.class
+br/com/andreg/karaoke/app/service/PlayerService.class
+br/com/andreg/karaoke/app/config/ConfigManager.class
