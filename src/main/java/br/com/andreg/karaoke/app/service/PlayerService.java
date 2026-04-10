@@ -480,6 +480,9 @@ public class PlayerService {
     // =========================================================================
     // CLASSE INTERNA: PAINEL CUSTOMIZADO COM RENDERIZAÇÃO 2D E ANIMAÇÕES
     // =========================================================================
+    // =========================================================================
+    // CLASSE INTERNA: PAINEL CUSTOMIZADO COM RENDERIZAÇÃO 2D E ANIMAÇÕES
+    // =========================================================================
     private static class TvPanel extends JPanel {
         private String estado = "PARADO";
         private int pontuacao = 0;
@@ -487,17 +490,29 @@ public class PlayerService {
         private final javax.swing.Timer animTimer;
         private float tick = 0;
 
-        // --- NOVO --- : Variáveis para o suspense da Roleta
         private long tempoInicioPontuacao = 0;
         private int numeroRoleta = 0;
         private final Random random = new Random();
-
-        // Adicione esta variável junto com as outras
         private int tempoSuspenseAtual = 3500; 
+
+        // --- NOVO --- : Variável para guardar a imagem do QR Code
+        private Image imgQrCode;
 
         public TvPanel() {
             setBackground(Color.BLACK);
-            // Timer que roda a ~60 FPS
+            
+            // --- NOVO --- : Carrega a imagem do QR Code da pasta resources
+            try {
+                java.net.URL urlQr = getClass().getResource("/qrcode.png");
+                if (urlQr != null) {
+                    imgQrCode = javax.imageio.ImageIO.read(urlQr);
+                } else {
+                    System.err.println("⚠️ qrcode.png não encontrado na pasta resources!");
+                }
+            } catch (Exception e) {
+                System.err.println("Erro ao carregar o QR Code: " + e.getMessage());
+            }
+
             animTimer = new javax.swing.Timer(16, e -> {
                 tick += 0.05f;
                 repaint();
@@ -505,11 +520,10 @@ public class PlayerService {
             animTimer.start();
         }
 
-        // Altere o método setEstado para receber o tempo
         public void setEstado(String estado, int pontuacao, int tempoSuspenseMs) {
             this.estado = estado;
             this.pontuacao = pontuacao;
-            this.tempoSuspenseAtual = tempoSuspenseMs; // Guarda o tempo específico desta nota!
+            this.tempoSuspenseAtual = tempoSuspenseMs;
             this.tick = 0; 
             
             if ("PONTUACAO".equals(estado)) {
@@ -530,6 +544,8 @@ public class PlayerService {
             
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            // --- NOVO --- : Suavização de imagem para o QR Code não ficar serrilhado
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
 
             int w = getWidth();
             int h = getHeight();
@@ -537,66 +553,82 @@ public class PlayerService {
             int centerY = h / 2;
 
             if ("PARADO".equals(estado)) {
-                // (O código do estado PARADO continua igualzinho...)
+                // Fundo animado
                 float alpha = (float) ((Math.sin(tick) + 1) / 4); 
                 Color[] colorsBg = {new Color(59, 130, 246, (int)(alpha * 100)), new Color(0, 0, 0, 0)};
                 RadialGradientPaint rgp = new RadialGradientPaint(new Point2D.Float(centerX, centerY), 600, new float[]{0.0f, 1.0f}, colorsBg);
                 g2d.setPaint(rgp);
                 g2d.fillRect(0, 0, w, h);
 
+                // Título
                 Font fontTitle = new Font("SansSerif", Font.BOLD, 120);
                 g2d.setFont(fontTitle);
                 String text = "KARAOKÊ LIVRE";
                 int textW = g2d.getFontMetrics().stringWidth(text);
                 int textX = centerX - (textW / 2);
-                int textY = centerY - 50;
+                int textY = centerY - 150; // Subi o texto um pouco para dar espaço pro QR Code
 
                 GradientPaint gpText = new GradientPaint(textX, textY - 100, new Color(96, 165, 250), textX + textW, textY, new Color(168, 85, 247));
                 g2d.setPaint(gpText);
                 g2d.drawString(text, textX, textY);
 
+                // Subtítulo
                 g2d.setFont(new Font("SansSerif", Font.PLAIN, 45));
                 g2d.setPaint(new Color(156, 163, 175));
                 String sub = "Escolha uma música pelo celular!";
                 int subW = g2d.getFontMetrics().stringWidth(sub);
-                g2d.drawString(sub, centerX - (subW / 2), centerY + 60);
+                g2d.drawString(sub, centerX - (subW / 2), centerY - 40);
+
+                // --- NOVO --- : Desenha o QR Code!
+                if (imgQrCode != null) {
+                    int qrSize = 260; // Tamanho do QR Code
+                    int qrX = centerX - (qrSize / 2);
+                    int qrY = centerY + 30; // Posição vertical logo abaixo do subtítulo
+
+                    // 1. Fundo branco com bordas arredondadas (Garante que a câmera leia rápido)
+                    g2d.setColor(Color.WHITE);
+                    g2d.fillRoundRect(qrX - 15, qrY - 15, qrSize + 30, qrSize + 30, 30, 30);
+
+                    // 2. Desenha a imagem do QR Code
+                    g2d.drawImage(imgQrCode, qrX, qrY, qrSize, qrSize, null);
+
+                    // 3. Texto instrucional abaixo do QR Code
+                    g2d.setFont(new Font("SansSerif", Font.BOLD, 24));
+                    g2d.setPaint(new Color(156, 163, 175));
+                    String scanText = "Aponte a câmera e abra o catálogo";
+                    int scanW = g2d.getFontMetrics().stringWidth(scanText);
+                    g2d.drawString(scanText, centerX - (scanW / 2), qrY + qrSize + 60);
+                }
 
             } else if ("PONTUACAO".equals(estado)) {
-                
-                // --- NOVO --- : Lógica do Cronômetro da Roleta
+                // ... (O código da PONTUAÇÃO continua exatamente igual ao que estava aqui)
                 long tempoDecorrido = System.currentTimeMillis() - tempoInicioPontuacao;
                 boolean isRoletaGirando = tempoDecorrido < tempoSuspenseAtual;
                 
                 if (isRoletaGirando) {
-                    // Atualiza o número a cada pouco para não ser um borrão ilegível
                     if (Math.random() < 0.2) {
-                        numeroRoleta = random.nextInt(90) + 10; // Gera números entre 10 e 99
+                        numeroRoleta = random.nextInt(90) + 10; 
                     }
                 }
 
-                // Efeito de pulo (só faz o pulo depois que a roleta parar)
                 int offsetY = isRoletaGirando ? 0 : (int) (Math.sin(tick * 2) * 20); 
 
-                // Brilho no fundo
                 Color[] colorsGlow = {new Color(234, 179, 8, 80), new Color(0, 0, 0, 0)};
                 RadialGradientPaint rgp = new RadialGradientPaint(new Point2D.Float(centerX, centerY + offsetY), 500, new float[]{0.0f, 1.0f}, colorsGlow);
                 g2d.setPaint(rgp);
                 g2d.fillRect(0, 0, w, h);
 
-                // Título: Muda de "CALCULANDO..." para "SUA NOTA"
                 g2d.setFont(new Font("SansSerif", Font.BOLD, 70));
                 g2d.setPaint(new Color(250, 204, 21)); 
                 String title = isRoletaGirando ? "CALCULANDO..." : "SUA NOTA";
                 g2d.drawString(title, centerX - (g2d.getFontMetrics().stringWidth(title) / 2), centerY - 250 + offsetY);
 
-                // A NOTA GIGANTE: Mostra a roleta louca, ou a nota final cravada
                 Font scoreFont = new Font("SansSerif", Font.BOLD, 350);
                 g2d.setFont(scoreFont);
                 String scoreStr = isRoletaGirando ? String.valueOf(numeroRoleta) : String.valueOf(pontuacao);
                 int scoreW = g2d.getFontMetrics().stringWidth(scoreStr);
                 int scoreY = centerY + 100 + offsetY;
 
-                // Efeito de tremer (Jitter) na roleta para dar mais emoção
                 int tremorX = isRoletaGirando ? (random.nextInt(10) - 5) : 0;
                 int tremorY = isRoletaGirando ? (random.nextInt(10) - 5) : 0;
 
@@ -609,7 +641,6 @@ public class PlayerService {
                 g2d.setPaint(gpScore); 
                 g2d.drawString(scoreStr, centerX - (scoreW / 2) + tremorX, scoreY + tremorY);
 
-                // Mensagem de Feedback: Só aparece quando o suspense acaba!
                 if (!isRoletaGirando) {
                     g2d.setFont(new Font("SansSerif", Font.BOLD, 55));
                     g2d.setPaint(Color.WHITE);
@@ -617,7 +648,6 @@ public class PlayerService {
                     g2d.drawString(msg, centerX - (g2d.getFontMetrics().stringWidth(msg) / 2), centerY + 280 + offsetY);
                 }
             }
-
             g2d.dispose();
         }
     }

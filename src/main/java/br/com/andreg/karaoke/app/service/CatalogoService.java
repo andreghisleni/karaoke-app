@@ -24,13 +24,15 @@ public class CatalogoService {
     private final List<Musica> catalogo = new ArrayList<>();
     private final Map<String, Metadado> bdMetadados = new HashMap<>();
 
-    // Adicionado o campo 'inicio' na classe auxiliar
+    // --- MUDANÇA 1: Adicionado o campo 'codigo' para guardar o [99000] ---
     private static class Metadado {
+        String codigo;
         String artista;
         String musica;
         String inicio;
         
-        Metadado(String artista, String musica, String inicio) {
+        Metadado(String codigo, String artista, String musica, String inicio) {
+            this.codigo = codigo;
             this.artista = artista;
             this.musica = musica;
             this.inicio = inicio;
@@ -52,28 +54,28 @@ public class CatalogoService {
                             String nomeArquivo = path.getFileName().toString();
                             String caminhoCompleto = path.toAbsolutePath().toString();
                             
-                            // Extrai o código tirando o ".mp4"
-                            String codigo = nomeArquivo;
-                            if (codigo.toLowerCase().endsWith(".mp4")) {
-                                codigo = codigo.substring(0, codigo.length() - 4);
+                            // Extrai o código padrão (caso não exista no BD.ini)
+                            String codigoFallback = nomeArquivo;
+                            if (codigoFallback.toLowerCase().endsWith(".mp4")) {
+                                codigoFallback = codigoFallback.substring(0, codigoFallback.length() - 4);
                             }
 
-                            // Cria a nova música
                             Musica m = new Musica();
-                            m.id = UUID.randomUUID().toString(); // Gera um ID único para o React usar como "key"
-                            m.codigo = codigo;
+                            m.id = UUID.randomUUID().toString(); 
                             m.caminho = caminhoCompleto;
 
                             Metadado meta = bdMetadados.get(nomeArquivo.toLowerCase());
                             
                             if (meta != null) {
-                                // Se achou no BD.ini, preenche tudo separado!
+                                // --- MUDANÇA 2: Agora usamos o código do BD.ini (ex: 99000) ---
+                                m.codigo = meta.codigo; 
                                 m.titulo = capitalizar(meta.musica);
                                 m.artista = capitalizar(meta.artista);
                                 m.inicio = capitalizar(meta.inicio);
                             } else {
-                                // Se for um vídeo solto fora do catálogo, usa o código/nome do arquivo
-                                m.titulo = codigo;
+                                // Se for um vídeo numerado antigo (ex: 01001.mp4) que não tá no INI
+                                m.codigo = codigoFallback;
+                                m.titulo = codigoFallback;
                                 m.artista = "Desconhecido";
                                 m.inicio = "";
                             }
@@ -99,22 +101,31 @@ public class CatalogoService {
         System.out.println("📂 Lendo BD.ini...");
         try (BufferedReader br = new BufferedReader(new FileReader(arquivoBd))) {
             String linha;
+            String currentCodigo = null; // Variável para segurar o ID numérico
             String currentArquivo = null;
             String currentArtista = "Desconhecido";
             String currentMusica = "Desconhecida";
-            String currentInicio = ""; // Nova variável para guardar o início
+            String currentInicio = ""; 
 
             while ((linha = br.readLine()) != null) {
                 linha = linha.trim();
                 
-                if (linha.startsWith("[")) {
-                    if (currentArquivo != null) {
-                        bdMetadados.put(currentArquivo.toLowerCase(), new Metadado(currentArtista, currentMusica, currentInicio));
+                // --- MUDANÇA 3: Capturando o bloco do ID [99000] ---
+                if (linha.startsWith("[") && linha.endsWith("]")) {
+                    // Salva a música anterior antes de começar a ler a próxima
+                    if (currentArquivo != null && currentCodigo != null) {
+                        bdMetadados.put(currentArquivo.toLowerCase(), new Metadado(currentCodigo, currentArtista, currentMusica, currentInicio));
                     }
+                    
+                    // Extrai o número removendo os colchetes
+                    currentCodigo = linha.substring(1, linha.length() - 1).trim();
+                    
+                    // Reseta os outros campos para a nova música
                     currentArquivo = null;
                     currentArtista = "Desconhecido";
                     currentMusica = "Desconhecida";
-                    currentInicio = ""; // Reseta para a próxima música
+                    currentInicio = ""; 
+                    
                 } else if (linha.toLowerCase().startsWith("arquivo=")) {
                     currentArquivo = linha.substring(8).trim();
                 } else if (linha.toLowerCase().startsWith("artista=")) {
@@ -122,11 +133,13 @@ public class CatalogoService {
                 } else if (linha.toLowerCase().startsWith("musica=")) {
                     currentMusica = linha.substring(7).trim();
                 } else if (linha.toLowerCase().startsWith("inicio=")) {
-                    currentInicio = linha.substring(7).trim(); // Captura a linha de início
+                    currentInicio = linha.substring(7).trim(); 
                 }
             }
-            if (currentArquivo != null) {
-                bdMetadados.put(currentArquivo.toLowerCase(), new Metadado(currentArtista, currentMusica, currentInicio));
+            
+            // Grava a última música lida ao final do arquivo
+            if (currentArquivo != null && currentCodigo != null) {
+                bdMetadados.put(currentArquivo.toLowerCase(), new Metadado(currentCodigo, currentArtista, currentMusica, currentInicio));
             }
             System.out.println("✅ " + bdMetadados.size() + " músicas lidas do BD.ini.");
         } catch (Exception e) {
@@ -149,7 +162,7 @@ public class CatalogoService {
         List<Musica> filtradas;
 
         if (query == null || query.trim().isEmpty()) {
-            filtradas = catalogo; // Sem pesquisa, devolve tudo (mas será paginado abaixo)
+            filtradas = catalogo; 
         } else {
             String lowerQuery = query.toLowerCase();
             filtradas = catalogo.stream()
@@ -162,11 +175,9 @@ public class CatalogoService {
                     .collect(Collectors.toList());
         }
 
-        // --- Lógica de Paginação ---
         int total = filtradas.size();
         int totalPaginas = (int) Math.ceil((double) total / limit);
         
-        // Garante que a página solicitada não ultrapassa os limites
         if (page < 1) page = 1;
         if (page > totalPaginas && totalPaginas > 0) page = totalPaginas;
 
@@ -183,7 +194,6 @@ public class CatalogoService {
             return Optional.empty();
         }
         
-        // Procura diretamente na lista completa (rápido e sem paginação)
         return catalogo.stream()
                 .filter(m -> id.equals(m.id))
                 .findFirst();
