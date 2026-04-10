@@ -156,6 +156,16 @@ public class PlayerService {
             this.videoFrame = new JFrame();
             this.videoFrame.setUndecorated(true);
             this.videoFrame.setBackground(Color.BLACK);
+
+            java.net.URL urlIconeJanela = getClass().getResource("/icon.png");
+            if (urlIconeJanela != null) {
+                Image iconeApp = Toolkit.getDefaultToolkit().getImage(urlIconeJanela);
+                
+                // Substitua 'frame' pelo nome da variável da sua janela (ex: janelaPrincipal, window, etc.)
+                this.videoFrame.setIconImage(iconeApp); 
+            } else {
+                System.err.println("Ícone da janela não encontrado nos recursos.");
+            }
             
             cardLayout = new CardLayout();
             painelPrincipal = new JPanel(cardLayout);
