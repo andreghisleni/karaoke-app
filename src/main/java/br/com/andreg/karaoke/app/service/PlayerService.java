@@ -18,6 +18,7 @@ import com.sun.jna.Pointer;
 
 import br.com.andreg.karaoke.app.config.ConfigManager;
 import br.com.andreg.karaoke.app.model.AppConfig;
+import br.com.andreg.karaoke.app.model.Pedido;
 import br.com.andreg.karaoke.app.model.Musica;
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory;
 import uk.co.caprica.vlcj.player.base.AudioDevice;
@@ -33,7 +34,6 @@ import java.io.File;
 import java.io.InputStream;
 import java.util.*;
 import java.util.List;
-import java.util.Queue;
 
 public class PlayerService {
 
@@ -51,8 +51,17 @@ public class PlayerService {
 
     private final ConfigManager configManager;
 
-    private final Queue<Musica> fila = new LinkedList<>();
+    /** Fila com a regra de dois andares; é a única fonte de verdade das próximas músicas. */
+    private final FilaService filaService;
+
+    /** Sala: IP local + QR code do link de convidado. */
+    private SalaService salaService;
+
+    /** Os três QRs da tela de descanso (Wi-Fi, catálogo local, catálogo online). */
+    private QrSalaService qrSalaService;
+
     private Musica musicaAtual = null;
+    private Pedido pedidoAtual = null;
     private String estadoAtual = "PARADO";
     private int ultimaPontuacao = 0;
 
@@ -63,9 +72,16 @@ public class PlayerService {
     private DevolayVideoFrame ndiVideoFrame;
     private ByteBuffer bufferGraficosJava;
 
-    public PlayerService(ConfigManager configManager, WebSocketService webSocketService) {
+    public PlayerService(ConfigManager configManager,
+                         WebSocketService webSocketService,
+                         FilaService filaService,
+                         SalaService salaService,
+                         QrSalaService qrSalaService) {
         this.configManager = configManager;
         this.webSocketService = webSocketService;
+        this.filaService = filaService;
+        this.salaService = salaService;
+        this.qrSalaService = qrSalaService;
         inicializarMotor();
     }
 
@@ -75,7 +91,7 @@ public class PlayerService {
 
         // --- NOVO --- : Criamos o painel animado INDEPENDENTE do modo. 
         // Se for janela, ele vai pra janela. Se for NDI, ele renderiza na memória.
-        painelTv = new TvPanel();
+        painelTv = new TvPanel(salaService, qrSalaService);
         painelTv.setSize(1920, 1080); // Forçamos o tamanho Full HD na memória
 
         if (isNdiMode) {
@@ -223,7 +239,8 @@ public class PlayerService {
                         // 1. O vídeo do cantor acabou. Prepara a pontuação!
                         estadoAtual = "PONTUACAO";
                         musicaAtual = null;
-                        vlcTocando = false; 
+                        pedidoAtual = null;
+                        vlcTocando = false;
                         
                         ultimaPontuacao = new Random().nextInt(31) + 70; 
                         webSocketService.fazerBroadcast(obterStatus()); 
@@ -311,37 +328,46 @@ public class PlayerService {
         }).start();
     }
 
-    public void adicionarNaFila(Musica musica) {
-        fila.offer(musica);
-        if (estadoAtual.equals("PARADO") && musicaAtual == null) {
+    /**
+     * Substitui o antigo "encafileirar aqui dentro": a ordem agora é decisão da
+     * {@link FilaService} (regra dos dois andares), e o player só consome.
+     *
+     * Alguém entrou na fila: se estamos parados, já puxa a próxima.
+     */
+    public void verificarInicioAutomatico() {
+        if ("PARADO".equals(estadoAtual) && musicaAtual == null && !filaService.estaVazia()) {
             tocarProxima();
         }
-        webSocketService.fazerBroadcast(obterStatus());
     }
 
     public void tocarProxima() {
-        if (fila.isEmpty()) {
+        Pedido proximo = filaService.proxima();
+
+        if (proximo == null || proximo.musica == null) {
             estadoAtual = "PARADO";
             musicaAtual = null;
+            pedidoAtual = null;
             vlcTocando = false; // --- NOVO --- : Liberta o NDI para a tela inicial!
-            
+
             SwingUtilities.invokeLater(() -> {
                 painelTv.setEstado("PARADO", 0, 0);
                 if (!isNdiMode && videoFrame != null) {
                     cardLayout.show(painelPrincipal, "TELA_TV");
                 }
             });
+            webSocketService.fazerBroadcast(obterStatus());
             return;
         }
 
-        musicaAtual = fila.poll();
+        pedidoAtual = proximo;
+        musicaAtual = proximo.musica;
         estadoAtual = "TOCANDO";
-        
+
         if (!isNdiMode && videoFrame != null) {
             SwingUtilities.invokeLater(() -> cardLayout.show(painelPrincipal, "TELA_VIDEO"));
         }
 
-        System.out.println("A reproduzir: " + musicaAtual.titulo);
+        System.out.println("A reproduzir: " + musicaAtual.titulo + "  (pedido de " + proximo.nome + ")");
         mediaPlayer.media().play(musicaAtual.caminho);
         // O vlcTocando será setado para 'true' automaticamente no RenderCallback do VLC!
 
@@ -371,7 +397,11 @@ public class PlayerService {
         status.put("estado", estadoAtual);
         status.put("musicaAtual", musicaAtual);
         status.put("pontuacao", ultimaPontuacao);
-        status.put("fila", new ArrayList<>(fila));
+        // A fila agora carrega quem pediu e em que andar — o painel usa titulo/artista/codigo
+        // exatamente como antes, e a tela do convidado lê nome/posicao/tier do mesmo payload.
+        status.put("fila", filaService.fila());
+        status.put("quemCanta", pedidoAtual == null ? null : pedidoAtual.nome);
+        status.put("maxPorPessoa", filaService.getMaxPendentes());
         return status;
     }
 
@@ -498,16 +528,36 @@ public class PlayerService {
         // --- NOVO --- : Variável para guardar a imagem do QR Code
         private Image imgQrCode;
 
-        public TvPanel() {
+        /** URL curta que vai dentro do QR, para escrever embaixo (quem está longe não escaneia). */
+        private String urlDoQr = "";
+
+        /** QR code service: a tela mostra Wi-Fi, catálogo local e catálogo online, cada um com seu
+         *  interruptor na tela de Configurações. */
+        private final QrSalaService qrService;
+
+        /** Cartões desenhados agora, e a assinatura do config que os gerou. */
+        private java.util.List<QrSalaService.Cartao> cartoes = java.util.List.of();
+        private String assinaturaQr = "";
+        private long ultimaChecagemQr = 0;
+
+        public TvPanel(SalaService sala, QrSalaService qrService) {
             setBackground(Color.BLACK);
-            
-            // --- NOVO --- : Carrega a imagem do QR Code da pasta resources
+            this.qrService = qrService;
+
+            // --- NOVO --- : O QR é gerado em runtime com o IP real desta máquina.
+            // Antes era um qrcode.png fixo no jar: trocava a rede da festa, o link morria.
             try {
-                java.net.URL urlQr = getClass().getResource("/qrcode.png");
-                if (urlQr != null) {
-                    imgQrCode = javax.imageio.ImageIO.read(urlQr);
-                } else {
-                    System.err.println("⚠️ qrcode.png não encontrado na pasta resources!");
+                if (qrService != null) {
+                    atualizarCartoes(true);
+                }
+                if (cartoes.isEmpty() && sala != null) {
+                    urlDoQr = sala.urlConvidado();
+                    imgQrCode = sala.qr(urlDoQr, 600);
+                }
+                if (imgQrCode == null) {
+                    System.err.println("⚠️ Não consegui gerar o QR; caindo no qrcode.png do jar.");
+                    java.net.URL urlQr = getClass().getResource("/qrcode.png");
+                    if (urlQr != null) imgQrCode = javax.imageio.ImageIO.read(urlQr);
                 }
             } catch (Exception e) {
                 System.err.println("Erro ao carregar o QR Code: " + e.getMessage());
@@ -520,7 +570,7 @@ public class PlayerService {
             animTimer.start();
         }
 
-        public void setEstado(String estado, int pontuacao, int tempoSuspenseMs) {
+    public void setEstado(String estado, int pontuacao, int tempoSuspenseMs) {
             this.estado = estado;
             this.pontuacao = pontuacao;
             this.tempoSuspenseAtual = tempoSuspenseMs;
@@ -535,6 +585,125 @@ public class PlayerService {
 
         public void pararAnimacao() {
             if (animTimer != null) animTimer.stop();
+        }
+
+        /**
+         * Se o config mudou (ligou/desligou um QR, digitou outro IP, trocou a senha do Wi-Fi), a
+         * tela de descanso acompanha sem reiniciar o app. Compara a assinatura no máximo uma vez
+         * por segundo: o timer de animação roda a 60 Hz e gerar QR não é coisa de frame.
+         */
+        private void atualizarCartoes(boolean forcado) {
+            if (qrService == null) return;
+            long agora = System.currentTimeMillis();
+            if (!forcado && agora - ultimaChecagemQr < 1000) return;
+            ultimaChecagemQr = agora;
+            try {
+                String novaAssinatura = qrService.assinatura();
+                if (forcado || !novaAssinatura.equals(assinaturaQr)) {
+                    assinaturaQr = novaAssinatura;
+                    cartoes = qrService.cartoes(600);
+                }
+            } catch (Exception e) {
+                System.err.println("Falha ao montar os QRs da tela: " + e.getMessage());
+            }
+        }
+
+        /**
+         * A fileira de QRs da tela de descanso.
+         *
+         * Duas coisas que já pegaram a TV no fundo: (1) a largura era fixa, e com os três QRs
+         * ligados {@code 3*244 + 2*286 = 1304} px numa tela de 1280 jogava o cartão da esquerda
+         * para fora do monitor; (2) o rótulo ficava tão alto que encostava no "Escolha uma música
+         * pelo celular". Agora a fileira só encolhe (nunca cresce) para caber na largura E na
+         * altura reais, com as mesmas medidas de sempre quando há espaço.
+         */
+        private void desenhaFileiraDeQrs(Graphics2D g2d, int centerX, int centerY) {
+            int n = cartoes.size();
+            if (n == 0) return;
+
+            final int ladoBase = n == 1 ? 300 : (n == 2 ? 268 : 244);
+            final int folgaBase = n == 1 ? 0 : (n == 2 ? 64 : 56); // respiro p/ câmera não pegar o vizinho
+            final int topoBase = n == 1 ? 58 : 66;                  // folga acima do QR p/ o rótulo
+            final int baseBase = 110;                               // dica + rodapé embaixo do QR
+
+            int largel = getWidth() > 200 ? getWidth() : 1280;
+            int altural = getHeight() > 200 ? getHeight() : 1024;
+            double margem = Math.max(80, largel * 0.06);
+            double larguraFileira = ladoBase * n + folgaBase * (n - 1);
+
+            double escala = 1.0;
+            if (larguraFileira > largel - margem) {
+                escala = (largel - margem) / larguraFileira;
+            }
+            double espacoVertical = altural - (centerY + topoBase + baseBase);
+            if (ladoBase * escala > espacoVertical) {
+                escala = Math.max(0.3, espacoVertical / ladoBase);
+            }
+
+            int lado = (int) Math.round(ladoBase * escala);
+            int intervalo = (int) Math.round(folgaBase * escala);
+            int moldura = (int) Math.max(8, Math.round(15 * escala));
+            int qrY = centerY + (int) Math.round(topoBase * Math.max(0.6, escala));
+            int larguraTotal = lado * n + intervalo * (n - 1);
+            int x0 = centerX - larguraTotal / 2;
+
+            int tamRotulo = Math.max(14, (int) Math.round((n == 1 ? 32 : 26) * escala));
+            int tamDica = Math.max(12, (int) Math.round((n == 1 ? 26 : 20) * escala));
+            int tamRodape = Math.max(13, (int) Math.round(24 * escala));
+
+            for (int i = 0; i < n; i++) {
+                QrSalaService.Cartao c = cartoes.get(i);
+                int qrX = n == 1 ? centerX - lado / 2 : x0 + i * (lado + intervalo);
+                int meioX = qrX + lado / 2;
+
+                // rótulo em cima: diz o que aquele QR faz, antes de apontar a câmera
+                g2d.setFont(new Font("SansSerif", Font.BOLD, tamRotulo));
+                g2d.setPaint(new Color(226, 232, 240));
+                String rotulo = cortar(c.rotulo(), lado + intervalo, g2d);
+                g2d.drawString(rotulo, meioX - g2d.getFontMetrics().stringWidth(rotulo) / 2,
+                        qrY - moldura - 8);
+
+                // fundo branco com borda: contraste é o que faz a câmera ler de longe
+                g2d.setColor(Color.WHITE);
+                g2d.fillRoundRect(qrX - moldura, qrY - moldura, lado + moldura * 2, lado + moldura * 2, 30, 30);
+                g2d.drawImage(c.imagem(), qrX, qrY, lado, lado, null);
+
+                // endereço/red rede escrito: nem todo mundo consegue escanear de longe
+                String dica = c.dica() == null ? "" : c.dica();
+                if (!dica.isEmpty()) {
+                    g2d.setFont(new Font("Monospaced", Font.BOLD, tamDica));
+                    g2d.setPaint(new Color(96, 165, 250));
+                    // com um QR só a URL inteira cabe na tela; com vários o teto é o próprio cartão,
+                    // senão o endereço do catálogo encosta no QR do catálogo online
+                    int limiteDica = n == 1 ? Math.min(largel - 80, (int) (largel * 0.72)) : lado;
+                    dica = cortar(dica, limiteDica, g2d);
+                    g2d.drawString(dica, meioX - g2d.getFontMetrics().stringWidth(dica) / 2,
+                            qrY + lado + moldura + (int) Math.round(30 * escala));
+                }
+            }
+
+            g2d.setFont(new Font("SansSerif", Font.BOLD, tamRodape));
+            g2d.setPaint(new Color(156, 163, 175));
+            String scanText = n == 1
+                    ? "Aponte a câmera e abra o catálogo"
+                    : "Aponte a câmera para o QR que você quer";
+            scanText = cortar(scanText, largel - 80, g2d);
+            int scanW = g2d.getFontMetrics().stringWidth(scanText);
+            g2d.drawString(scanText, centerX - scanW / 2,
+                    qrY + lado + moldura + (int) Math.round(72 * escala));
+        }
+
+        /** Corta o texto na largura disponível e fecha com reticências (URL grande na TV). */
+        private static String cortar(String texto, int larguraMax, Graphics2D g2d) {
+            if (larguraMax <= 20) return texto;
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < texto.length(); i++) {
+                sb.append(texto.charAt(i));
+                if (g2d.getFontMetrics().stringWidth(sb + "…") > larguraMax) {
+                    return sb.substring(0, sb.length() - 1) + "…";
+                }
+            }
+            return texto;
         }
 
         @Override
@@ -579,25 +748,32 @@ public class PlayerService {
                 int subW = g2d.getFontMetrics().stringWidth(sub);
                 g2d.drawString(sub, centerX - (subW / 2), centerY - 40);
 
-                // --- NOVO --- : Desenha o QR Code!
-                if (imgQrCode != null) {
-                    int qrSize = 260; // Tamanho do QR Code
+                // --- NOVO --- : Um, dois ou três QR Code lado a lado, conforme os interruptores.
+                atualizarCartoes(false);
+                if (!cartoes.isEmpty()) {
+                    desenhaFileiraDeQrs(g2d, centerX, centerY);
+                } else if (imgQrCode != null) {
+                    // fallback: config quebrado / QR desligado em tudo, menos a imagem do jar
+                    int qrSize = 300; // Tamanho do QR Code (metade do gerado: desce 2x limpo)
                     int qrX = centerX - (qrSize / 2);
                     int qrY = centerY + 30; // Posição vertical logo abaixo do subtítulo
 
-                    // 1. Fundo branco com bordas arredondadas (Garante que a câmera leia rápido)
                     g2d.setColor(Color.WHITE);
                     g2d.fillRoundRect(qrX - 15, qrY - 15, qrSize + 30, qrSize + 30, 30, 30);
-
-                    // 2. Desenha a imagem do QR Code
                     g2d.drawImage(imgQrCode, qrX, qrY, qrSize, qrSize, null);
 
-                    // 3. Texto instrucional abaixo do QR Code
                     g2d.setFont(new Font("SansSerif", Font.BOLD, 24));
                     g2d.setPaint(new Color(156, 163, 175));
                     String scanText = "Aponte a câmera e abra o catálogo";
                     int scanW = g2d.getFontMetrics().stringWidth(scanText);
                     g2d.drawString(scanText, centerX - (scanW / 2), qrY + qrSize + 60);
+
+                    if (!urlDoQr.isEmpty()) {
+                        g2d.setFont(new Font("Monospaced", Font.BOLD, 30));
+                        g2d.setPaint(new Color(96, 165, 250));
+                        int urlW = g2d.getFontMetrics().stringWidth(urlDoQr);
+                        g2d.drawString(urlDoQr, centerX - (urlW / 2), qrY + qrSize + 112);
+                    }
                 }
 
             } else if ("PONTUACAO".equals(estado)) {

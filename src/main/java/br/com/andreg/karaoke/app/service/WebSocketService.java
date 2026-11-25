@@ -23,24 +23,30 @@ public class WebSocketService {
 
     // Envia o estado atual do player para toda a gente conectada
     public void fazerBroadcast(Object status) {
-        sessoes.stream().filter(ctx -> ctx.session.isOpen()).forEach(sessao -> {
+        // Celular que sai da rede nem sempre manda close: se o send falha, a sessão sai
+        // agora em vez de ficar pesando no broadcast a noite inteira.
+        for (WsContext sessao : new java.util.ArrayList<>(sessoes)) {
             try {
-                sessao.send(status);
+                if (sessao.session.isOpen()) sessao.send(status);
+                else sessoes.remove(sessao);
             } catch (Exception e) {
-                // Ignora se der erro ao enviar para um cliente específico
+                sessoes.remove(sessao);
             }
-        });
+        }
     }
 
     public void iniciarKeepAlive() {
         keepAliveScheduler.scheduleAtFixedRate(() -> {
-            sessoes.stream().filter(ctx -> ctx.session.isOpen()).forEach(sessao -> {
+            // Faxina igual ao broadcast: celular que cai da rede nem sempre manda close, e sem
+            // isto o keepalive só deixa a sessão morta parada no set para sempre.
+            for (WsContext sessao : new java.util.ArrayList<>(sessoes)) {
                 try {
-                    sessao.send("ping");
+                    if (sessao.session.isOpen()) sessao.send("ping");
+                    else sessoes.remove(sessao);
                 } catch (Exception e) {
                     sessoes.remove(sessao);
                 }
-            });
+            }
         }, 15, 15, TimeUnit.SECONDS);
     }
 

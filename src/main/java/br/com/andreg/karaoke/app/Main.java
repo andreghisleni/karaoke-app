@@ -15,11 +15,18 @@ import javax.swing.UIManager;
 import br.com.andreg.karaoke.app.config.ConfigManager;
 import br.com.andreg.karaoke.app.controller.ApiController;
 import br.com.andreg.karaoke.app.service.CatalogoService;
+import br.com.andreg.karaoke.app.service.FilaService;
 import br.com.andreg.karaoke.app.service.PlayerService;
+import br.com.andreg.karaoke.app.service.SalaService;
+import br.com.andreg.karaoke.app.service.TokenPainelService;
+import br.com.andreg.karaoke.app.service.QrSalaService;
 import br.com.andreg.karaoke.app.service.WebSocketService;
 import io.javalin.Javalin;
 
 public class Main {
+
+    /** Porta única da festa: painel, tela de convidado e API moram aqui. */
+    public static final int PORTA = 7000;
 
     public static void main(String[] args) {
         // --- 1. MÁGICA DO VISUAL NATIVO ---
@@ -42,10 +49,23 @@ public class Main {
         CatalogoService catalogoService = new CatalogoService();
         catalogoService.carregar(configManager.getConfig().pastas);
 
-        WebSocketService wsService = new WebSocketService(); // 1. Cria o WS
-        PlayerService playerService = new PlayerService(configManager, wsService); // 2. Passa para o Player
+        // A sala (IP + QR) e a fila (regra dos dois andares) nascem antes do player:
+        // a tela de descanso precisa do QR no instante em que é criada.
+        SalaService salaService = new SalaService(PORTA);
+        salaService.setUrlForcada(configManager.getConfig().urlConvidado);
 
-        ApiController apiController = new ApiController(configManager, catalogoService, playerService, wsService); // 3. Passa para a API
+        // Token do painel: nasce (ou revive do config.json) antes do navegador, porque é a URL que
+        // vamos abrir. A tela do convidado nunca passa por aqui.
+        TokenPainelService tokenService = new TokenPainelService(configManager, salaService);
+        QrSalaService qrService = new QrSalaService(configManager, salaService);
+
+        FilaService filaService = new FilaService();
+        filaService.definirMaxPendentes(configManager.getConfig().maxPedidosPorPessoa);
+
+        WebSocketService wsService = new WebSocketService(); // 1. Cria o WS
+        PlayerService playerService = new PlayerService(configManager, wsService, filaService, salaService, qrService); // 2. Passa para o Player
+
+        ApiController apiController = new ApiController(configManager, catalogoService, playerService, wsService, filaService, salaService, tokenService, qrService); // 3. Passa para a API
 
         // 4. Sobe o servidor Javalin
         Javalin app = Javalin.create(config -> {
@@ -53,15 +73,28 @@ public class Main {
             
             // Serve os arquivos estáticos (CSS, JS do Vite)
             config.staticFiles.add("/public", io.javalin.http.staticfiles.Location.CLASSPATH);
-            
+
+            // Segunda frente: o catálogo do convidado (catalogo-front), servido em /p/.
+            // O index é servido por rota (ApiController), os assets com hash no nome vêm aqui e
+            // podem ficar cacheados uma semana — numa festa Wi-Fi isso é o que salva a rede.
+            if (ApiController.frontConvidadoCompilado()) {
+                config.staticFiles.add(arquivos -> {
+                    arquivos.hostedPath = "/p";
+                    arquivos.directory = "/convidado";
+                    arquivos.location = io.javalin.http.staticfiles.Location.CLASSPATH;
+                    arquivos.headers.put("Cache-Control", "public, max-age=604800");
+                });
+            }
+
             // ========================================================
             // A MÁGICA DO SPA: Se não achar a rota, devolve o index do React
             // ========================================================
             config.spaRoot.addFile("/", "/public/index.html", io.javalin.http.staticfiles.Location.CLASSPATH);
             
-        }).start(7000);
+        }).start(PORTA);
 
         apiController.registrarRotas(app);
+        apiController.aplicarConfiguracoes();
 
         // Inicia o keepalive do WebSocket
         wsService.iniciarKeepAlive();
@@ -73,10 +106,15 @@ public class Main {
         }));
 
         // --- NOVO: Abrir o navegador automaticamente ---
-        abrirNavegador("http://localhost:7000/dashboard");
+        // No endereço local do próprio computador, com o token: ele não precisa digitar nada.
+        abrirNavegador("http://localhost:" + PORTA + "/dashboard?token=" + tokenService.token());
 
-        System.out.println("🚀 Servidor rodando em http://localhost:7000");
+        System.out.println("🚀 Servidor rodando em http://localhost:" + PORTA);
         System.out.println("🎤 O controle do Karaokê foi aberto no seu navegador.");
+        System.out.println("📱 Convidados pedem música em " + salaService.urlConvidado());
+        System.out.println("🖼  Cada QR da tela de descanso vem de /api/qrcode.png?tipo=wifi|catalogo|online");
+        // O QR do painel sai aqui, em ASCII: é o jeito mais rápido de abrir o controle no celular.
+        System.out.println(tokenService.bannerDoConsole());
 
         if (SystemTray.isSupported()) {
             try {
@@ -97,7 +135,8 @@ public class Main {
             MenuItem itemPainel = new MenuItem("Abrir Painel de Controlo");
             itemPainel.addActionListener(e -> {
                 try {
-                    java.awt.Desktop.getDesktop().browse(new java.net.URI("http://localhost:7000/dashboard"));
+                    java.awt.Desktop.getDesktop().browse(
+                            new java.net.URI(tokenService.urlPainel()));
                 } catch (Exception ex) {
                     System.err.println("Erro ao abrir navegador: " + ex.getMessage());
                 }

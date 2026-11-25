@@ -1,6 +1,17 @@
 {
-  "pastas" : [ "/home/andre/Music/PASTA 10", "/home/andre/Videos/karaoke-test" ],
+  "pastas" : [ "/home/andre/Music/PASTA 10", "/home/andre/Videos/karaoke-test", "/media/andre/5C824C8A5996E5FF/Karaokê Vs/musicas" ],
   "audioDeviceId" : "alsa_output.usb-Shure_Inc_Shure_MV7-00.analog-stereo",
   "videoOutputMode" : "Monitor",
-  "displayId" : "1"
+  "displayId" : "1",
+  "pinAdmin" : "",
+  "urlConvidado" : "http://10.90.35.201:7000/p",
+  "maxPedidosPorPessoa" : 10,
+  "tokenPainel" : "NU9YSYN8",
+  "wifiSsid" : "Teste",
+  "wifiSenha" : "teste1234",
+  "wifiSeguranca" : "WPA",
+  "urlCatalogoOnline" : "https://short.andreg.com.br/qxxteq",
+  "mostrarQrWifi" : true,
+  "mostrarQrCatalogoLocal" : true,
+  "mostrarQrCatalogoOnline" : true
 }

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- caminho absoluto: o vite prefixa com base (/p/). Com "./" o favicon escapava de /p -->
+    <link rel="icon" type="image/svg+xml" href="/p/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0e0d15" />
+
+    <title>Catálogo da festa · peça sua música</title>
+    <meta
+      name="description"
+      content="Busca instantânea no catálogo de karaokê da festa por código, título ou artista, com trecho da letra, a fila do salão ao vivo e a sua lista salva no aparelho."
+    />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="Catálogo de Karaokê" />
+    <meta property="og:title" content="Catálogo da festa · peça sua música" />
+    <meta
+      property="og:description"
+      content="Digite o código ou o nome da música, peça pelo celular e acompanhe a sua vez na fila do salão."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Catálogo de Karaokê" />
+    <meta
+      name="twitter:description"
+      content="Busca instantânea por código, título ou artista, direto do computador do karaokê."
+    />
+
+    <script>
+      /*
+       * Aplica o tema antes do primeiro paint. Sem isto, quem usa tema claro
+       * via um flash preto em cada recarga da página.
+       */
+      (function () {
+        try {
+          var prefs = JSON.parse(localStorage.getItem('karaoke:preferencias') || '{}');
+          var prefereClaro = window.matchMedia('(prefers-color-scheme: light)').matches;
+          var claro = prefs.tema === 'claro' || (prefs.tema !== 'escuro' && prefereClaro);
+          var raiz = document.documentElement;
+          raiz.classList.toggle('dark', !claro);
+          raiz.style.colorScheme = claro ? 'light' : 'dark';
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', claro ? '#fafafd' : '#0e0d15');
+        } catch (erro) {
+          /* sem localStorage (modo privado restrito): segue o do sistema */
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/p/assets/index-aSr3CbFs.js"></script>
+    <link rel="stylesheet" crossorigin href="/p/assets/index-CQGVRvW3.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <p style="font: 16px/1.5 system-ui; padding: 24px; max-width: 34rem">
+        O catálogo precisa de JavaScript para buscar nas músicas da festa e mostrar a fila. Liberte
+        o JavaScript neste aparelho e recarregue a página.
+      </p>
+    </noscript>
+  </body>
+</html>

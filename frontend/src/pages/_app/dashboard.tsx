@@ -138,6 +138,11 @@ export default function KaraokeDashboard() {
       });
       if (res.ok) {
         toast.success('Música adicionada à fila!');
+      } else {
+        // O botão era mudo: 409 (cota da fila) e 404 (ID velho) passavam sem nenhum aviso.
+        // O servidor já devolve a frase certa em português no corpo da resposta.
+        const motivo = await res.text().catch(() => '');
+        toast.error(motivo || 'Erro ao adicionar música.');
       }
     } catch {
       toast.error('Erro ao adicionar música.');
@@ -171,6 +176,18 @@ export default function KaraokeDashboard() {
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar por código, artista, música ou trecho..."
               value={busca}
+              enterKeyHint="search"
+              inputMode="search"
+              aria-label="Buscar música"
+              onKeyDown={(e) => {
+                // Anotação dele no README: "aceitar o ENTER para fechar o teclado".
+                // Aqui o filtro já roda a cada tecla (debounce 300 ms), então Enter
+                // não precisa buscar de novo: só fecha o teclado do celular.
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
+              }}
             />
           </CardHeader>
           <CardContent className="flex-1 overflow-hidden">

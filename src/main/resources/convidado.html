@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d14">
+<title>Karaokê · pedir música</title>
+<style>
+  /* Sem fonte externa, sem CDN: na rede isolada da festa nada pode depender da internet. */
+  :root {
+    --bg: #0b0d14;
+    --card: #141824;
+    --card-2: #1b2130;
+    --linha: #262e40;
+    --tx: #eef1f7;
+    --tx-2: #9aa3b8;
+    --azul: #60a5fa;
+    --roxo: #a855f7;
+    --ok: #34d399;
+    --alerta: #fbbf24;
+    --ruim: #f87171;
+    --raio: 14px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 50% -200px, #1a2033 0%, var(--bg) 60%);
+    color: var(--tx);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 0 14px 90px; }
+  /* Grid com texto nowrap: sem minmax(0,1fr) a coluna é dimensionada pelo max-content
+     e o cartão vaza da tela no celular. */
+  ul.pedidos, .resultados, .fila-lista { grid-template-columns: minmax(0, 1fr); }
+  ul.pedidos > li, .resultados > .mus, .fila-item { min-width: 0; }
+
+  /* ---------- topo ---------- */
+  header.topo {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(11,13,20,.86);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--linha);
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  }
+  .topo-linha { max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
+  .marca { font-weight: 800; letter-spacing: .2px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+  .marca b { background: linear-gradient(90deg, var(--azul), var(--roxo)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .quem { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .chip-nome {
+    background: var(--card-2); border: 1px solid var(--linha); color: var(--tx);
+    border-radius: 999px; padding: 7px 12px; font-size: 14px; font-weight: 600;
+    min-height: 36px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mini {
+    background: transparent; border: 1px solid var(--linha); color: var(--tx-2);
+    border-radius: 999px; padding: 7px 10px; font-size: 13px; min-height: 36px; min-width: 36px;
+    touch-action: manipulation; cursor: pointer;
+  }
+
+  /* ---------- busca ---------- */
+  .busca-caixa { position: relative; margin: 14px 0 6px; }
+  input[type=search], input[type=text] {
+    width: 100%; background: var(--card); color: var(--tx);
+    border: 1px solid var(--linha); border-radius: var(--raio);
+    padding: 15px 44px 15px 44px; font-size: 17px; min-height: 54px;
+    -webkit-appearance: none; appearance: none;
+  }
+  input:focus { outline: 2px solid var(--azul); outline-offset: 1px; border-color: transparent; }
+  input::placeholder { color: #6d768c; }
+  .lupa { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--tx-2); pointer-events: none; }
+  .limpar {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: var(--card-2); border: 0; color: var(--tx-2); border-radius: 999px;
+    width: 34px; height: 34px; font-size: 17px; display: none; cursor: pointer;
+  }
+  .status-busca { display: flex; align-items: center; gap: 8px; color: var(--tx-2); font-size: 13px; min-height: 20px; padding: 0 2px 8px; }
+  .ponto { width: 7px; height: 7px; border-radius: 50%; background: var(--tx-2); flex: none; }
+  .ponto.on { background: var(--ok); }
+  .ponto.off { background: var(--ruim); }
+
+  /* ---------- cartão "tocando" ---------- */
+  .cartao { background: var(--card); border: 1px solid var(--linha); border-radius: var(--raio); padding: 12px 14px; margin: 10px 0; }
+  .rotulo { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--tx-2); font-weight: 700; }
+  .tocando-nome { font-size: 18px; font-weight: 700; margin-top: 4px; }
+  .tocando-sub { color: var(--tx-2); font-size: 14px; }
+  .eu { color: var(--ok); font-weight: 700; }
+
+  /* ---------- minha fila ---------- */
+  .minha { border-color: #2c3a55; background: linear-gradient(180deg, #16203a 0%, var(--card) 100%); }
+  .minha-cab { display: flex; align-items: baseline; gap: 8px; }
+  .minha-cab .rotulo { flex: 1; }
+  .cota { font-size: 12px; color: var(--tx-2); }
+  .vazio { color: var(--tx-2); font-size: 14px; margin: 8px 0 2px; }
+  ul.pedidos { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+  ul.pedidos li {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card-2); border: 1px solid var(--linha); border-radius: 12px; padding: 9px 10px;
+  }
+  .pos {
+    flex: none; min-width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+    font-weight: 800; font-size: 14px; background: #223052; color: var(--azul);
+  }
+  .pos.frente { background: #14351f; color: var(--ok); }
+  .li-txt { flex: 1; min-width: 0; }
+  .li-titulo { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .li-sub { color: var(--tx-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cancelar {
+    flex: none; background: transparent; border: 1px solid var(--linha); color: var(--tx-2);
+    border-radius: 10px; width: 36px; height: 36px; font-size: 16px; cursor: pointer;
+  }
+
+  /* ---------- próximos (dobrável) ---------- */
+  details.prox { background: var(--card); border: 1px solid var(--linha); border-radius: var(--raio); margin: 10px 0; }
+  details.prox > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 8px; }
+  details.prox > summary::-webkit-details-marker { display: none; }
+  details.prox > summary .seta { margin-left: auto; color: var(--tx-2); transition: transform .18s; }
+  details[open].prox > summary .seta { transform: rotate(180deg); }
+  .fila-lista { padding: 0 14px 12px; display: grid; gap: 6px; }
+  .fila-item { display: flex; gap: 10px; align-items: baseline; font-size: 14px; padding: 6px 0; border-top: 1px solid #1e2536; }
+  .fila-item .n { color: var(--tx-2); font-variant-numeric: tabular-nums; flex: none; width: 22px; }
+  .fila-item .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fila-item .q { color: var(--tx-2); font-size: 13px; flex: none; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fila-item.meu .t { color: var(--azul); font-weight: 700; }
+  .tier2 { color: var(--alerta); font-size: 11px; border: 1px solid #4a3a12; border-radius: 6px; padding: 1px 4px; }
+
+  /* ---------- resultados ---------- */
+  .resultados { display: grid; gap: 8px; margin-top: 4px; }
+  .mus {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--linha); border-radius: var(--raio); padding: 10px 12px;
+  }
+  .cod {
+    flex: none; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 13px;
+    color: var(--roxo); background: #241a38; border-radius: 8px; padding: 6px 7px;
+    min-width: 52px; max-width: 72px; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mus-txt { flex: 1; min-width: 0; }
+  .mus-titulo { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mus-artista { color: var(--tx-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  mark { background: transparent; color: var(--azul); font-weight: 800; }
+  .pedir {
+    flex: none; border: 0; border-radius: 11px; padding: 0 16px; min-height: 44px; min-width: 84px;
+    background: linear-gradient(90deg, var(--azul), var(--roxo)); color: #06080d; font-weight: 800; font-size: 14px;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .pedir[disabled] { opacity: .45; }
+  .pedir.dentro { background: #14351f; color: var(--ok); }
+  .aviso { color: var(--tx-2); font-size: 14px; text-align: center; padding: 18px 10px; }
+
+  /* ---------- nome ---------- */
+  .veu {
+    position: fixed; inset: 0; z-index: 50; background: rgba(4,6,12,.78);
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .veu.aberta { display: flex; }
+  .ficha { background: var(--card); border: 1px solid var(--linha); border-radius: 18px; padding: 20px; width: 100%; max-width: 420px; }
+  .ficha h2 { margin: 0 0 4px; font-size: 20px; }
+  .ficha p { margin: 0 0 14px; color: var(--tx-2); font-size: 14px; }
+  .ficha input { padding-left: 14px; }
+  .primario {
+    width: 100%; margin-top: 10px; border: 0; border-radius: 12px; min-height: 50px;
+    background: linear-gradient(90deg, var(--azul), var(--roxo)); color: #06080d; font-weight: 800; font-size: 16px; cursor: pointer;
+  }
+  .regra { margin-top: 14px; color: var(--tx-2); font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+
+  /* ---------- toasts ---------- */
+  .toasts { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60; width: min(94vw, 480px); display: grid; gap: 8px; }
+  .toast {
+    background: var(--card-2); border: 1px solid var(--linha); border-left: 4px solid var(--azul);
+    border-radius: 12px; padding: 11px 13px; font-size: 14px; box-shadow: 0 12px 30px rgba(0,0,0,.45);
+    animation: sobe .18s ease-out;
+  }
+  .toast.ok { border-left-color: var(--ok); }
+  .toast.warn { border-left-color: var(--alerta); }
+  .toast.ruim { border-left-color: var(--ruim); }
+  @keyframes sobe { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .rodape { color: #5a6479; font-size: 12px; text-align: center; margin-top: 26px; line-height: 1.7; }
+  .rodape code { color: var(--tx-2); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="topo-linha">
+    <div class="marca">🎤 <b>Karaokê</b></div>
+    <div class="quem">
+      <span class="chip-nome" id="mostraNome">—</span>
+      <button class="mini" id="trocarNome" type="button" aria-label="Trocar meu nome">trocar</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="busca-caixa">
+    <span class="lupa" aria-hidden="true">🔍</span>
+    <input id="busca" type="search" inputmode="search" autocomplete="off" autocapitalize="off"
+           spellcheck="false" placeholder="Buscar música, artista ou código" aria-label="Buscar música">
+    <button class="limpar" id="limparBusca" type="button" aria-label="Limpar busca">✕</button>
+  </div>
+  <div class="status-busca">
+    <span class="ponto" id="pontoRede" aria-hidden="true"></span>
+    <span id="linhasBusca">Escreva o nome da música, do artista ou o código.</span>
+  </div>
+
+  <section class="cartao" id="cartaoTocando" hidden>
+    <div class="rotulo">Tocando agora</div>
+    <div class="tocando-nome" id="tocandoTitulo">—</div>
+    <div class="tocando-sub" id="tocandoSub">—</div>
+  </section>
+
+  <section class="cartao minha" id="cartaoMinha">
+    <div class="minha-cab">
+      <span class="rotulo">Minhas músicas</span>
+      <span class="cota" id="cota">0/2</span>
+    </div>
+    <ul class="pedidos" id="listaMinha"></ul>
+    <p class="vazio" id="minhaVazia">Você ainda não pediu nada. Ache a música acima e toque em <b>Pedir</b>.</p>
+  </section>
+
+  <details class="prox" id="detalheProx">
+    <summary><span class="rotulo">Próximos</span><span id="contaProx" class="cota"></span><span class="seta" aria-hidden="true">▾</span></summary>
+    <div class="fila-lista" id="listaProx"></div>
+  </details>
+
+  <div class="resultados" id="resultados"></div>
+  <p class="aviso" id="aviso"></p>
+
+  <p class="rodape" id="rodape"></p>
+</div>
+
+<div class="veu" id="veuNome" role="dialog" aria-modal="true" aria-labelledby="tituloNome">
+  <form class="ficha" id="formNome">
+    <h2 id="tituloNome">Como você se chama?</h2>
+    <p>O nome fica guardado só neste celular e é ele que segura o seu lugar na fila.</p>
+    <input id="campoNome" type="text" maxlength="40" autocomplete="name" placeholder="Ex.: Ana" aria-label="Seu nome">
+    <button class="primario" type="submit">Entrar na fila</button>
+    <p class="regra"><span aria-hidden="true">⏳</span><span id="textoRegra">Máximo 2 músicas por vez: a primeira entra na frente e a segunda vai para o fim da fila.</span></p>
+  </form>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+<p class="sr" id="anuncio" aria-live="assertive"></p>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   Regras de estado
+   - o nome mora no localStorage deste celular (nada de conta, nada de nuvem);
+   - a identidade na fila é o nome normalizado, exatamente como o Java faz;
+   - a busca usa o servidor (5 ms) e, quando der, troca para o acervo local.
+   ========================================================================= */
+
+var CHAVE_NOME = "karaoke:nome";
+var LIMIT = 30;
+
+var nome = "";
+var acervo = null;          // [[codigo, titulo, artista], ...] quando baixar
+var acervoBusca = null;     // mesma lista com o blob minúsculo sem acento
+var fila = [];
+var tocando = null;
+var quemCanta = "";
+var maxPorPessoa = 2;
+var buscando = false;
+
+var $ = function (id) { return document.getElementById(id); };
+var elBusca = $("busca"), elResultados = $("resultados"), elAviso = $("aviso");
+
+function norm(s) {
+  return (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/* ------------------------------------------------------------------ nome */
+
+function lerNome() {
+  try { return localStorage.getItem(CHAVE_NOME) || ""; } catch (e) { return ""; }
+}
+function salvarNome(v) {
+  nome = v;
+  try { localStorage.setItem(CHAVE_NOME, v); } catch (e) { /* modo privado: segue sem guardar */ }
+  $("mostraNome").textContent = v || "—";
+  desenharMinha();
+  desenharProx();
+  desenharResultados(ultimaLista, elBusca.value.trim());
+}
+
+function abrirNome(troca) {
+  $("tituloNome").textContent = troca ? "Qual é o seu nome agora?" : "Como você se chama?";
+  $("veuNome").classList.add("aberta");
+  $("campoNome").value = nome;
+  setTimeout(function () { $("campoNome").focus(); }, 60);
+}
+
+$("formNome").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  var v = $("campoNome").value.trim();
+  if (!v) { toast("Escreva seu nome para pedir música.", "warn"); $("campoNome").focus(); return; }
+  if (v.length > 40) v = v.slice(0, 40);
+  salvarNome(v);
+  $("veuNome").classList.remove("aberta");
+  sincronizar();
+});
+$("trocarNome").addEventListener("click", function () { abrirNome(true); });
+
+/* ----------------------------------------------------------------- toast */
+
+function toast(msg, tipo) {
+  var div = document.createElement("div");
+  div.className = "toast " + (tipo || "");
+  div.textContent = msg;
+  $("toasts").appendChild(div);
+  $("anuncio").textContent = msg;
+  setTimeout(function () { div.style.opacity = "0"; div.style.transition = "opacity .3s"; }, 3400);
+  setTimeout(function () { div.remove(); }, 3800);
+}
+
+/* ---------------------------------------------------------------- rede */
+
+function emRede(on) {
+  var p = $("pontoRede");
+  p.className = "ponto " + (on ? "on" : "off");
+}
+
+async function pedirJson(url, opcoes) {
+  var r = await fetch(url, opcoes);
+  var dados = null;
+  try { dados = await r.json(); } catch (e) { dados = null; }
+  return { ok: r.ok, status: r.status, dados: dados };
+}
+
+/* --------------------------------------------------------------- fila */
+
+async function sincronizar() {
+  try {
+    var r = await pedirJson("/api/fila");
+    if (!r.ok || !r.dados) throw new Error("fila");
+    aplicarFila(r.dados);
+    emRede(true);
+  } catch (e) {
+    emRede(false);
+  }
+}
+
+function aplicarFila(d) {
+  fila = d.fila || [];
+  maxPorPessoa = d.maxPorPessoa || 2;
+  tocando = d.tocando || null;
+  quemCanta = d.quemCanta || "";
+  $("textoRegra").textContent = "Máximo " + maxPorPessoa + " músicas por vez: a primeira entra na frente e a segunda vai para o fim da fila.";
+  desenharTocando();
+  desenharMinha();
+  desenharProx();
+  desenharResultados(ultimaLista, elBusca.value.trim());
+}
+
+function meusPedidos() {
+  var chave = norm(nome);
+  if (!chave) return [];
+  return fila.filter(function (p) { return norm(p.nome) === chave; });
+}
+
+/*
+ * A música que a pessoa está cantando agora já saiu da fila, mas o servidor ainda a
+ * conta para a cota. O contador da tela tem de bater com o do servidor, senão o
+ * convidado aperta achando que cabe e toma 409.
+ */
+function vezesUsadas() {
+  return meusPedidos().length + (nome && norm(quemCanta) === norm(nome) ? 1 : 0);
+}
+
+function desenharTocando() {
+  var c = $("cartaoTocando");
+  if (!tocando || !tocando.titulo) { c.hidden = true; return; }
+  c.hidden = false;
+  $("tocandoTitulo").textContent = tocando.titulo;
+  var sub = [tocando.artista && tocando.artista !== "Desconhecido" ? tocando.artista : "", tocando.codigo].filter(Boolean).join(" · ");
+  var quem = quemCanta ? " · " + quemCanta : "";
+  $("tocandoSub").textContent = sub + quem;
+  if (nome && norm(quemCanta) === norm(nome) && !c.dataset.aviso) {
+    c.dataset.aviso = "1";
+    toast("É a sua vez! 🎤", "ok");
+    if (navigator.vibrate) navigator.vibrate(220);
+  }
+  if (!nome || norm(quemCanta) !== norm(nome)) c.dataset.aviso = "";
+}
+
+function desenharMinha() {
+  var ul = $("listaMinha"), meus = meusPedidos();
+  ul.innerHTML = "";
+  $("minhaVazia").hidden = meus.length > 0;
+  $("cota").textContent = vezesUsadas() + "/" + maxPorPessoa;
+
+  meus.forEach(function (p) {
+    var li = document.createElement("li");
+
+    var pos = document.createElement("span");
+    pos.className = "pos" + (p.posicao <= 3 ? " frente" : "");
+    pos.textContent = p.posicao;
+
+    var txt = document.createElement("div");
+    txt.className = "li-txt";
+    var t = document.createElement("div"); t.className = "li-titulo"; t.textContent = p.titulo;
+    var s = document.createElement("div"); s.className = "li-sub";
+    s.textContent = (p.artista && p.artista !== "Desconhecido" ? p.artista + " · " : "") + "código " + p.codigo;
+    txt.appendChild(t); txt.appendChild(s);
+
+    var x = document.createElement("button");
+    x.className = "cancelar"; x.type = "button"; x.title = "Desistir desta música"; x.setAttribute("aria-label", "Cancelar " + p.titulo);
+    x.textContent = "✕";
+    x.addEventListener("click", function () { cancelar(p); });
+
+    li.appendChild(pos); li.appendChild(txt); li.appendChild(x);
+    ul.appendChild(li);
+  });
+
+  if (vezesUsadas() >= maxPorPessoa) {
+    var nota = document.createElement("p");
+    nota.className = "vazio";
+    nota.textContent = nome && norm(quemCanta) === norm(nome) && meus.length === 0
+        ? "Você está no palco agora. Assim que acabar, pode pedir a próxima."
+        : "Cheio por enquanto — assim que a primeira sair você pode pedir outra.";
+    ul.appendChild(nota);
+  }
+}
+
+function desenharProx() {
+  var box = $("listaProx");
+  box.innerHTML = "";
+  $("contaProx").textContent = fila.length ? fila.length + " na fila" : "fila vazia";
+  if (!fila.length) {
+    var v = document.createElement("div");
+    v.className = "vazio";
+    v.textContent = "Ninguém na fila. Seja a primeira pessoa a pedir!";
+    box.appendChild(v);
+    return;
+  }
+  fila.forEach(function (p, i) {
+    var div = document.createElement("div");
+    var meu = nome && norm(p.nome) === norm(nome);
+    div.className = "fila-item" + (meu ? " meu" : "");
+    var n = document.createElement("span"); n.className = "n"; n.textContent = i + 1;
+    var t = document.createElement("span"); t.className = "t"; t.textContent = p.titulo;
+    var q = document.createElement("span"); q.className = "q"; q.textContent = p.nome;
+    div.appendChild(n); div.appendChild(t);
+    if (p.tier === 2) { var tag = document.createElement("span"); tag.className = "tier2"; tag.textContent = "2ª"; div.appendChild(tag); }
+    div.appendChild(q);
+    box.appendChild(div);
+  });
+}
+
+/* ------------------------------------------------------------- resultados */
+
+function destacar(texto, q) {
+  if (!q) return escapar(texto);
+  var i = norm(texto).indexOf(norm(q));
+  if (i < 0) return escapar(texto);
+  return escapar(texto.slice(0, i)) + "<mark>" + escapar(texto.slice(i, i + q.length)) + "</mark>" + escapar(texto.slice(i + q.length));
+}
+function escapar(s) {
+  return (s || "").replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+var ultimaLista = [];
+
+function desenharResultados(lista, q) {
+  var box = elResultados;
+  box.innerHTML = "";
+  if (!lista || !lista.length) return;
+
+  var meus = {};
+  meusPedidos().forEach(function (p) { meus[p.codigo] = p.posicao; });
+
+  lista.forEach(function (m) {
+    var codigo = m.codigo || m[0], titulo = m.titulo || m[1], artista = m.artista || m[2];
+    var div = document.createElement("div");
+    div.className = "mus";
+
+    var cod = document.createElement("span"); cod.className = "cod"; cod.textContent = codigo;
+    var txt = document.createElement("div"); txt.className = "mus-txt";
+    var t = document.createElement("div"); t.className = "mus-titulo"; t.innerHTML = destacar(titulo, q);
+    var a = document.createElement("div"); a.className = "mus-artista"; a.innerHTML = artista && artista !== "Desconhecido" ? destacar(artista, q) : "&nbsp;";
+    txt.appendChild(t); txt.appendChild(a);
+
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "pedir";
+    var naFila = meus[codigo];
+    if (naFila) { b.classList.add("dentro"); b.textContent = "Nº " + naFila; b.disabled = true; b.title = "Já está na fila"; }
+    else { b.textContent = "Pedir"; b.addEventListener("click", function () { pedir(codigo, titulo, b); }); }
+
+    div.appendChild(cod); div.appendChild(txt); div.appendChild(b);
+    box.appendChild(div);
+  });
+}
+
+function aviso(txt) { elAviso.textContent = txt || ""; }
+
+/* ---------------------------------------------------------------- pedir */
+
+var emVoo = {};
+
+async function pedir(codigo, titulo, botao) {
+  if (!nome) { abrirNome(false); return; }
+  if (emVoo[codigo]) return;
+  emVoo[codigo] = true;
+  botao.disabled = true;
+  var original = botao.textContent;
+  botao.textContent = "…";
+
+  try {
+    var r = await pedirJson("/api/pedidos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codigo: codigo, nome: nome })
+    });
+    var d = r.dados || {};
+    if (r.status === 201 && d.aceito) {
+      toast(d.mensagem || "Pedido anotado!", "ok");
+      if (navigator.vibrate) navigator.vibrate(40);
+      await sincronizar();
+    } else {
+      toast(d.mensagem || "Não consegui pedir agora.", d.codigoErro === "duplicada" ? "warn" : "ruim");
+      botao.textContent = original;
+      botao.disabled = false;
+      if (d.codigoErro === "duplicada") await sincronizar();
+    }
+  } catch (e) {
+    toast("Sem conexão com o servidor do karaokê.", "ruim");
+    botao.textContent = original;
+    botao.disabled = false;
+    emRede(false);
+  }
+  delete emVoo[codigo];
+}
+
+async function cancelar(p) {
+  try {
+    var r = await pedirJson("/api/pedidos", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codigo: p.codigo, nome: nome })
+    });
+    toast((r.dados && r.dados.mensagem) || "Pronto.", r.ok ? "ok" : "warn");
+    await sincronizar();
+  } catch (e) {
+    toast("Sem conexão com o servidor.", "ruim");
+  }
+}
+
+/* ---------------------------------------------------------------- busca */
+
+var timer = null;
+
+elBusca.addEventListener("input", function () {
+  $("limparBusca").style.display = elBusca.value ? "block" : "none";
+  clearTimeout(timer);
+  var q = elBusca.value.trim();
+  if (!q) { ultimaLista = []; desenharResultados([], ""); aviso(""); linhasBusca(""); return; }
+
+  if (acervoBusca) { buscarLocal(q); }              // instantânea, sem ida ao servidor
+  else { linhasBusca("Buscando…"); timer = setTimeout(function () { buscarRemoto(q); }, 220); }
+});
+
+$("limparBusca").addEventListener("click", function () {
+  elBusca.value = ""; $("limparBusca").style.display = "none";
+  ultimaLista = []; desenharResultados([], ""); aviso(""); linhasBusca("");
+  elBusca.focus();
+});
+
+function linhasBusca(txt) { $("linhasBusca").textContent = txt; }
+
+async function buscarRemoto(q) {
+  buscando = true;
+  try {
+    var r = await pedirJson("/api/musicas?q=" + encodeURIComponent(q) + "&limit=" + LIMIT + "&page=1");
+    var d = r.dados;
+    if (!d || !d.data) throw new Error("busca");
+    ultimaLista = d.data;
+    desenharResultados(ultimaLista, q);
+    aviso(d.total > d.data.length ? "+" + (d.total - d.data.length) + " outras — refine a busca." :
+          d.total === 0 ? "Nada com “" + q + "”. Tente o código da música." : "");
+    linhasBusca(d.total + (d.total === 1 ? " música" : " músicas") + " com “" + q + "”");
+    emRede(true);
+    adiarAcervo();
+  } catch (e) {
+    aviso("Não achei o servidor agora. Olhe a fila acima — ela continua valendo.");
+    emRede(false);
+  }
+  buscando = false;
+}
+
+/*
+ * O acervo completo são ~200 KB comprimidos. Vale a pena para a digitação ficar
+ * instantânea, mas não vale os 20 celulares baixando ele no mesmo segundo em que
+ * escaneiam o QR. Então: só pedimos depois da primeira busca de verdade, e com um
+ * atraso aleatório para desencontrar as pessoas.
+ */
+var acervoAdiado = false;
+function adiarAcervo() {
+  if (acervoAdiado || acervoBusca) return;
+  acervoAdiado = true;
+  setTimeout(carregarAcervoQuandoDer, 6000 + Math.random() * 24000);
+}
+
+function buscarLocal(q) {
+  var alvo = norm(q);
+  var pesos = [];
+  for (var i = 0; i < acervoBusca.length; i++) {
+    var l = acervoBusca[i];
+    if (l.blob.indexOf(alvo) === -1) continue;
+    var peso;
+    if (l.c === alvo) peso = 0;
+    else if (l.c.indexOf(alvo) === 0) peso = 1;
+    else if (l.tn.indexOf(alvo) === 0) peso = 2;
+    else if (l.an.indexOf(alvo) === 0) peso = 3;
+    else if (l.tn.indexOf(alvo) !== -1) peso = 4;
+    else peso = 5;
+    pesos.push({ l: l, peso: peso });
+  }
+  pesos.sort(function (a, b) { return a.peso - b.peso || a.l.tn.localeCompare(b.l.tn); });
+  var total = pesos.length;
+  ultimaLista = pesos.slice(0, LIMIT).map(function (x) { return x.l; });
+  desenharResultados(ultimaLista, q);
+  aviso(total > LIMIT ? "+" + (total - LIMIT) + " outras — refine a busca." :
+        total === 0 ? "Nada com “" + q + "” no acervo desta festa. Tente o código." : "");
+  linhasBusca(total + (total === 1 ? " música" : " músicas") + " com “" + q + "” · busca no celular");
+}
+
+/* Chega o acervo uma vez e a digitação para de ir ao servidor. Vai depois do
+   primeiro resultado para não competir com o que importa no primeiro segundo.  */
+async function carregarAcervoQuandoDer() {
+  try {
+    var r = await pedirJson("/api/acervo");
+    var dados = r.dados || r;                  // envelope antigo e shape cru, ambos valem
+    var lista = dados.musicas || dados.itens;  // musicas = contrato atual (5 campos)
+    if (!r.ok || !lista) return;
+    acervo = lista;
+    acervoBusca = acervo.map(function (l) {
+      var item = { c: l[0], t: l[1], a: l[2] };
+      item.codigo = l[0]; item.titulo = l[1]; item.artista = l[2];   // mesma forma do /api/musicas
+      item.tn = norm(l[1]); item.an = norm(l[2]);
+      item.blob = norm(l[0] + " " + l[1] + " " + l[2]);
+      return item;
+    });
+    if (elBusca.value.trim()) buscarLocal(elBusca.value.trim());
+  } catch (e) { /* sem sorte: segue buscando no servidor, que responde em ~5 ms */ }
+}
+
+/* ------------------------------------------------------------- tempo real */
+
+var ws = null, wsTentativas = 0;
+
+function conectarWs() {
+  var proto = location.protocol === "https:" ? "wss://" : "ws://";
+  try { ws = new WebSocket(proto + location.host + "/ws"); } catch (e) { return; }
+
+  ws.onopen = function () { wsTentativas = 0; emRede(true); };
+  ws.onmessage = function (ev) {
+    var d;
+    try { d = JSON.parse(ev.data); } catch (e) { return; }
+    if (!d || !("fila" in d)) return;
+    aplicarFila(d);
+    emRede(true);
+  };
+  ws.onclose = function () {
+    wsTentativas++;
+    setTimeout(conectarWs, Math.min(20000, 800 * wsTentativas));
+  };
+  ws.onerror = function () { if (ws) ws.close(); };
+}
+
+/* fallback: se o socket cair e ninguém mexer na fila, atualiza sozinho */
+setInterval(function () {
+  if (document.hidden) return;
+  if (!ws || ws.readyState !== 1) sincronizar();
+}, 5000);
+
+document.addEventListener("visibilitychange", function () {
+  if (!document.hidden) { sincronizar(); if (elBusca.value.trim() && acervoBusca) buscarLocal(elBusca.value.trim()); }
+});
+
+/* --------------------------------------------------------------- rodapé */
+
+async function mostrarEndereco() {
+  try {
+    var r = await pedirJson("/api/sala");
+    if (r.ok && r.dados && r.dados.url) {
+      var url = r.dados.url.replace(/\/p$/, "");
+      $("rodape").innerHTML = "Servidor da festa: <code>" + escapar(url) + "</code><br>" +
+        "Tudo acontece neste Wi-Fi — sem internet, sem cadastro.";
+    }
+  } catch (e) { /* sem informação de sala, tudo bem */ }
+}
+
+/* ------------------------------------------------------------------ boot */
+
+nome = lerNome();
+$("mostraNome").textContent = nome || "—";
+if (!nome) abrirNome(false); else sincronizar();
+conectarWs();
+mostrarEndereco();
+/* O acervo não é baixado no boot: quem só olha a fila não precisa de 200 KB.
+   Ele chega sozinho depois da primeira busca (ver adiarAcervo). */
+</script>
+</body>
+</html>

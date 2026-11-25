@@ -49,6 +49,14 @@
             <artifactId>flatlaf</artifactId>
             <version>3.4</version>
         </dependency>
+
+        <!-- QR code da tela do convidado, gerado em runtime. Só o "core" (puro Java):
+             o PNG é desenhado com Java2D no SalaService, então não precisamos do javase. -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>3.5.3</version>
+        </dependency>
     </dependencies>
 
     <build>
