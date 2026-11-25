@@ -76,3 +76,10 @@ Suspense: Roleta animada que para exatamente no momento em que a nota é anuncia
 
 🤝 Autor
 Desenvolvido por Andre G. – Estudante de Engenharia de Controle e Automação no IFSC.
+
+
+
+Problemas a ver no catalogo:
+- filtrar, remover os espaços no final
+- aCEITAR O ENTER PARA FECHAR O TECLADO
+- para o futuro, uma busca inteligente

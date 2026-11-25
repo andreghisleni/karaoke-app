@@ -79,17 +79,48 @@ export default function KaraokeDashboard() {
         ? 'ws://localhost:7000/ws'
         : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 
-    const ws = new WebSocket(wsUrl);
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempts = 0;
+    let unmounted = false;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setStatus(data);
+    const connect = () => {
+      if (unmounted) return;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('Conectado ao Servidor do Karaokê');
+        reconnectAttempts = 0;
+      };
+
+      ws.onmessage = (event) => {
+        if (event.data === 'ping') return;
+        const data = JSON.parse(event.data);
+        setStatus(data);
+      };
+
+      ws.onclose = () => {
+        if (unmounted) return;
+        console.log('Desconectado do servidor. Reconectando...');
+        const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000);
+        reconnectAttempts += 1;
+        reconnectTimeout = setTimeout(connect, delay);
+      };
+
+      ws.onerror = (err) => {
+        console.error('Erro no WebSocket:', err);
+        ws?.close();
+      };
     };
 
-    ws.onopen = () => console.log('✅ Conectado ao Servidor do Karaokê');
-    ws.onclose = () => console.log('❌ Desconectado do servidor');
+    connect();
 
-    return () => ws.close();
+    return () => {
+      unmounted = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      ws?.close();
+    };
   }, []);
 
   const adicionarFila = async (musicaId: string) => {

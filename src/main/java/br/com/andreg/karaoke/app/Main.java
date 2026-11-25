@@ -63,8 +63,14 @@ public class Main {
 
         apiController.registrarRotas(app);
 
+        // Inicia o keepalive do WebSocket
+        wsService.iniciarKeepAlive();
+
         // Registra um "hook" para fechar o VLC limpinho quando derrubarmos o servidor no terminal (Ctrl+C)
-        Runtime.getRuntime().addShutdownHook(new Thread(playerService::desligar));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            wsService.pararKeepAlive();
+            playerService.desligar();
+        }));
 
         // --- NOVO: Abrir o navegador automaticamente ---
         abrirNavegador("http://localhost:7000/dashboard");
