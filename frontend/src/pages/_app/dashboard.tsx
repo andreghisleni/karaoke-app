@@ -85,7 +85,9 @@ export default function KaraokeDashboard() {
     let unmounted = false;
 
     const connect = () => {
-      if (unmounted) return;
+      if (unmounted) {
+        return;
+      }
 
       ws = new WebSocket(wsUrl);
 
@@ -95,15 +97,19 @@ export default function KaraokeDashboard() {
       };
 
       ws.onmessage = (event) => {
-        if (event.data === 'ping') return;
+        if (event.data === 'ping') {
+          return;
+        }
         const data = JSON.parse(event.data);
         setStatus(data);
       };
 
       ws.onclose = () => {
-        if (unmounted) return;
+        if (unmounted) {
+          return;
+        }
         console.log('Desconectado do servidor. Reconectando...');
-        const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000);
+        const delay = Math.min(1000 * 2 ** reconnectAttempts, 30_000);
         reconnectAttempts += 1;
         reconnectTimeout = setTimeout(connect, delay);
       };
@@ -118,7 +124,7 @@ export default function KaraokeDashboard() {
 
     return () => {
       unmounted = true;
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (reconnectTimeout){ clearTimeout(reconnectTimeout);}
       ws?.close();
     };
   }, []);
@@ -191,7 +197,7 @@ export default function KaraokeDashboard() {
                         </div>
 
                         {/* 3. Renderização do Artista e Início da Música */}
-                        <div className='mt-1 flex flex-col gap-0.5 text-muted-foreground text-sm'>
+                        <div className="mt-1 flex flex-col gap-0.5 text-muted-foreground text-sm">
                           {musica.artista &&
                             musica.artista !== 'Desconhecido' && (
                               <p className="flex items-center gap-1">
@@ -202,7 +208,7 @@ export default function KaraokeDashboard() {
                               </p>
                             )}
                           {musica.inicio && (
-                            <p className='mt-0.5 line-clamp-1 text-xs italic opacity-80'>
+                            <p className="mt-0.5 line-clamp-1 text-xs italic opacity-80">
                               🎵 Começa com: "{musica.inicio}"
                             </p>
                           )}
@@ -223,7 +229,7 @@ export default function KaraokeDashboard() {
                 {/* Botão de Paginação */}
                 {temMais && (
                   <Button
-                    className='mt-2 w-full border border-dashed'
+                    className="mt-2 w-full border border-dashed"
                     onClick={carregarMais}
                     variant="ghost"
                   >
@@ -244,7 +250,7 @@ export default function KaraokeDashboard() {
             {/* Status do Player */}
             <div className="relative mb-6 overflow-hidden rounded-lg bg-primary p-5 text-primary-foreground shadow">
               <div className="relative z-10">
-                <h3 className='mb-2 font-bold text-primary-foreground/70 text-xs uppercase tracking-wider'>
+                <h3 className="mb-2 font-bold text-primary-foreground/70 text-xs uppercase tracking-wider">
                   {status.estado === 'TOCANDO'
                     ? '▶ Tocando Agora'
                     : status.estado === 'PONTUACAO'
@@ -253,19 +259,19 @@ export default function KaraokeDashboard() {
                 </h3>
                 {status.musicaAtual ? (
                   <>
-                    <p className='mb-1 line-clamp-1 font-bold text-3xl'>
+                    <p className="mb-1 line-clamp-1 font-bold text-3xl">
                       {status.musicaAtual.titulo}
                     </p>
                     {/* Exibe o artista no Player Principal */}
                     {status.musicaAtual.artista &&
                       status.musicaAtual.artista !== 'Desconhecido' && (
-                        <p className='font-medium text-lg text-primary-foreground/90'>
+                        <p className="font-medium text-lg text-primary-foreground/90">
                           {status.musicaAtual.artista}
                         </p>
                       )}
                     {status.musicaAtual.codigo && (
                       <Badge
-                        className='mt-3 border-transparent bg-primary-foreground/10 text-primary-foreground'
+                        className="mt-3 border-transparent bg-primary-foreground/10 text-primary-foreground"
                         variant="outline"
                       >
                         Cód: {status.musicaAtual.codigo}
@@ -273,7 +279,7 @@ export default function KaraokeDashboard() {
                     )}
                   </>
                 ) : (
-                  <p className='mt-2 font-medium text-xl'>
+                  <p className="mt-2 font-medium text-xl">
                     Aguardando o próximo talento...
                   </p>
                 )}
@@ -299,7 +305,7 @@ export default function KaraokeDashboard() {
             <ScrollArea className="flex-1 pr-4">
               <div className="space-y-2 pb-4">
                 {status.fila.length === 0 ? (
-                  <p className='mt-8 text-center text-muted-foreground text-sm'>
+                  <p className="mt-8 text-center text-muted-foreground text-sm">
                     A fila está vazia. Adicione músicas na lista ao lado!
                   </p>
                 ) : (
@@ -312,13 +318,13 @@ export default function KaraokeDashboard() {
                         {index + 1}
                       </div>
                       <div className="flex-1 overflow-hidden">
-                        <p className='truncate font-semibold'>
+                        <p className="truncate font-semibold">
                           {musica.titulo}
                         </p>
                         {/* Exibe o artista na Fila também */}
                         {musica.artista &&
                           musica.artista !== 'Desconhecido' && (
-                            <p className='truncate text-muted-foreground text-sm'>
+                            <p className="truncate text-muted-foreground text-sm">
                               {musica.artista}
                             </p>
                           )}

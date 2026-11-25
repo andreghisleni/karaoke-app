@@ -56,10 +56,14 @@ export default function ConfigPage() {
         // Processa as respostas (também pode fazer o .json() em paralelo, mas assim já fica super rápido)
         if (audioRes.ok) {
           setAudioDevices(await audioRes.json());
+        } else {
+          toast.error('Erro ao carregar dispositivos de áudio.');
         }
 
         if (screensRes.ok) {
           setScreens(await screensRes.json());
+        } else {
+          toast.error('Erro ao carregar telas.');
         }
 
         if (configRes.ok) {
@@ -68,6 +72,8 @@ export default function ConfigPage() {
           if (config.audioDeviceId) { setAudioDeviceId(config.audioDeviceId); }
           if (config.videoOutputMode) { setVideoOutputMode(config.videoOutputMode); }
           if (config.displayId) { setDisplayId(config.displayId); }
+        } else {
+          toast.error('Erro ao carregar configurações.');
         }
 
       } catch (error) {
@@ -142,7 +148,7 @@ export default function ConfigPage() {
             <div className="space-y-2">
               <Label>Saída de Áudio (Isolada)</Label>
               <Select onValueChange={setAudioDeviceId} value={audioDeviceId}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Selecione a placa de som" />
                 </SelectTrigger>
                 <SelectContent>

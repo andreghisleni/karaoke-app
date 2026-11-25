@@ -9,17 +9,11 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './pages/__root'
-import { Route as TvRouteImport } from './pages/tv'
 import { Route as AppLayoutRouteImport } from './pages/_app/layout'
 import { Route as IndexRouteImport } from './pages/index'
 import { Route as AppDashboardRouteImport } from './pages/_app/dashboard'
 import { Route as AppConfigIndexRouteImport } from './pages/_app/config/index'
 
-const TvRoute = TvRouteImport.update({
-  id: '/tv',
-  path: '/tv',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AppLayoutRoute = AppLayoutRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
@@ -42,13 +36,11 @@ const AppConfigIndexRoute = AppConfigIndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/tv': typeof TvRoute
   '/dashboard': typeof AppDashboardRoute
   '/config': typeof AppConfigIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/tv': typeof TvRoute
   '/dashboard': typeof AppDashboardRoute
   '/config': typeof AppConfigIndexRoute
 }
@@ -56,33 +48,24 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppLayoutRouteWithChildren
-  '/tv': typeof TvRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/config/': typeof AppConfigIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/tv' | '/dashboard' | '/config'
+  fullPaths: '/' | '/dashboard' | '/config'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/tv' | '/dashboard' | '/config'
-  id: '__root__' | '/' | '/_app' | '/tv' | '/_app/dashboard' | '/_app/config/'
+  to: '/' | '/dashboard' | '/config'
+  id: '__root__' | '/' | '/_app' | '/_app/dashboard' | '/_app/config/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppLayoutRoute: typeof AppLayoutRouteWithChildren
-  TvRoute: typeof TvRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/tv': {
-      id: '/tv'
-      path: '/tv'
-      fullPath: '/tv'
-      preLoaderRoute: typeof TvRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_app': {
       id: '/_app'
       path: ''
@@ -131,7 +114,6 @@ const AppLayoutRouteWithChildren = AppLayoutRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppLayoutRoute: AppLayoutRouteWithChildren,
-  TvRoute: TvRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
