@@ -383,7 +383,8 @@ public class PlayerService {
         }
 
         int segundos = segundosDoAviso();
-        if (segundos <= 0) {
+        // Pedido do painel (nome "Operador") não passa pela chamada na TV: vai direto ao vídeo.
+        if (segundos <= 0 || ehDoOperador(proximo)) {
             iniciarReproducao(proximo);
             return;
         }
@@ -446,6 +447,16 @@ public class PlayerService {
         int configurado = configManager.getConfig().anunciarProximoSegundos;
         if (configurado <= 0) return 0;
         return Math.min(configurado, 30);
+    }
+
+    /**
+     * O pedido saiu do painel? O `FilaService` grava o nome "Operador" nele, e não faz sentido a TV
+     * anunciar "o próximo a brilhar vai ser: Operador" para quem está do lado de fora da festa.
+     * Mesmo critério do `quemPediu()` do painel: compara sem caixa e sem espaços sobrando.
+     */
+    private static boolean ehDoOperador(Pedido p) {
+        String n = p == null ? null : p.nome;
+        return n != null && n.strip().equalsIgnoreCase("Operador");
     }
 
     /** A tela de descanso (os QR codes) de volta, com a fila intacta. */

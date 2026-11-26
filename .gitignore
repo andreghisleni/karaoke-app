@@ -1,3 +1,6 @@
 target
 DB.ini
 *.log
+dependency-reduced-pom.xml
+
+audios
