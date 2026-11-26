@@ -23,12 +23,49 @@ type Musica = {
   inicio: string;
 };
 
+/**
+ * A fila que chega do `/ws` é a lista de pedidos do Java (`Pedido`), não a de `Musica`: além de
+ * título/artista/código vem `nome` (quem pediu), `tier` (1 = primeira da pessoa, 2 = repeteco no
+ * fim da fila) e `posicao`. Os campos antigos continuam os mesmos, então nada aqui quebra.
+ */
+type ItemDaFila = Musica & {
+  nome?: string | null;
+  tier?: number;
+  posicao?: number;
+};
+
+type AnuncioDaTv = {
+  nome: string;
+  titulo: string;
+  artista?: string;
+  codigo?: string;
+};
+
 type PlayerStatus = {
-  estado: 'PARADO' | 'TOCANDO' | 'PONTUACAO';
+  estado: 'PARADO' | 'TOCANDO' | 'PONTUACAO' | 'ANUNCIO';
   musicaAtual: Musica | null;
   pontuacao: number;
-  fila: Musica[];
+  fila: ItemDaFila[];
+  /** Quem está no microfone agora. */
+  quemCanta?: string | null;
+  /** O "O próximo a brilhar vai ser…" que a TV está mostrando neste instante. */
+  anuncio?: AnuncioDaTv | null;
+  /** Fila pausada entre músicas pelo botão abaixo. */
+  pausado?: boolean;
 };
+
+/**
+ * Nome de quem pediu, quando não foi o operador.
+ *
+ * O Java grava "Operador" nos pedidos que saem desta tela (`FilaService.pedirPeloPainel`), e
+ * repetir isso em cada linha só polui: quem olha a fila quer saber das pessoas do salão.
+ */
+function quemPediu(nome?: string | null): string | null {
+  const limpo = (nome ?? '').trim();
+  if (!limpo) return null;
+  if (limpo.toLowerCase() === 'operador') return null;
+  return limpo.length > 42 ? `${limpo.slice(0, 41)}…` : limpo;
+}
 
 export default function KaraokeDashboard() {
   const [busca, setBusca] = useState('');
@@ -150,11 +187,41 @@ export default function KaraokeDashboard() {
   };
 
   const pularMusica = async () => {
+    if (status.estado === 'ANUNCIO') {
+      // A pessoa já foi chamada na TV e já saiu da fila: pular agora deixaria um vazio no ar.
+      toast.info('Essa pessoa já foi chamada na TV; o vídeo larga daqui a pouco.');
+      return;
+    }
     try {
       await fetch('/api/player/next', { method: 'POST' });
       toast.info('Pulando para a próxima...');
     } catch {
       toast.error('Erro ao pular música.');
+    }
+  };
+
+  /** Pausa ENTRE músicas: o que está no ar termina, a próxima espera, a TV volta para os QRs. */
+  const alternarPausa = async () => {
+    try {
+      const res = await fetch('/api/player/pausa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        pausado?: boolean;
+        mensagem?: string;
+      };
+      if (res.ok && typeof json.pausado === 'boolean') {
+        // O broadcast chega em seguida, mas o botão responde na hora (no celular isso importa).
+        setStatus((atual) => ({ ...atual, pausado: json.pausado }));
+        if (json.pausado) toast.info('Fila pausada: a TV voltou para os QR codes.');
+        else toast.success(json.mensagem || 'Fila retomada.');
+      } else {
+        toast.error(json.mensagem || 'Erro ao pausar a fila.');
+      }
+    } catch {
+      toast.error('Erro de ligação com o servidor.');
     }
   };
 
@@ -190,7 +257,7 @@ export default function KaraokeDashboard() {
               }}
             />
           </CardHeader>
-          <CardContent className="flex-1 overflow-hidden">
+          <CardContent className="min-h-0 flex-1 overflow-hidden">
             <ScrollArea className="h-full pr-4">
               <div className="space-y-3 pb-4">
                 {catalogo.length === 0 ? (
@@ -263,18 +330,39 @@ export default function KaraokeDashboard() {
           <CardHeader>
             <CardTitle>Fila de Reprodução</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-1 flex-col overflow-hidden">
+          <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {/* Status do Player */}
             <div className="relative mb-6 overflow-hidden rounded-lg bg-primary p-5 text-primary-foreground shadow">
               <div className="relative z-10">
-                <h3 className="mb-2 font-bold text-primary-foreground/70 text-xs uppercase tracking-wider">
-                  {status.estado === 'TOCANDO'
-                    ? '▶ Tocando Agora'
-                    : status.estado === 'PONTUACAO'
-                      ? '🏆 Pontuação na tela!'
-                      : '⏸ Karaokê Livre'}
-                </h3>
-                {status.musicaAtual ? (
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <h3 className="font-bold text-primary-foreground/70 text-xs uppercase tracking-wider">
+                    {status.estado === 'TOCANDO'
+                      ? '▶ Tocando Agora'
+                      : status.estado === 'PONTUACAO'
+                        ? '🏆 Pontuação na tela!'
+                        : status.estado === 'ANUNCIO'
+                          ? '🎙 Chamando na TV'
+                          : status.pausado
+                            ? '⏸ Fila pausada'
+                            : '⏸ Karaokê Livre'}
+                  </h3>
+                  {/* Pausar não corta a música do ar: o selo deixa isso claro no meio da festa. */}
+                  {status.pausado && status.estado !== 'PARADO' && (
+                    <span className="rounded-full bg-primary-foreground/15 px-2 py-0.5 font-semibold text-[11px] text-primary-foreground/90">
+                      fila pausada: a próxima só sai ao retomar
+                    </span>
+                  )}
+                </div>
+                {status.estado === 'ANUNCIO' && status.anuncio ? (
+                  <>
+                    <p className="mb-1 line-clamp-1 font-bold text-3xl">
+                      {status.anuncio.nome || 'alguém'}
+                    </p>
+                    <p className="font-medium text-lg text-primary-foreground/90">
+                      vai cantar “{status.anuncio.titulo}”
+                    </p>
+                  </>
+                ) : status.musicaAtual ? (
                   <>
                     <p className="mb-1 line-clamp-1 font-bold text-3xl">
                       {status.musicaAtual.titulo}
@@ -294,23 +382,39 @@ export default function KaraokeDashboard() {
                         Cód: {status.musicaAtual.codigo}
                       </Badge>
                     )}
+                    {quemPediu(status.quemCanta) && (
+                      <p className="mt-2 text-primary-foreground/85 text-sm">
+                        🙋 pedida por {quemPediu(status.quemCanta)}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p className="mt-2 font-medium text-xl">
-                    Aguardando o próximo talento...
+                    {status.pausado
+                      ? 'Pausado — a TV está nos QR codes.'
+                      : 'Aguardando o próximo talento...'}
                   </p>
                 )}
               </div>
 
-              <div className="relative z-10 mt-5 flex gap-2">
+              <div className="relative z-10 mt-5 flex flex-wrap gap-2">
                 <Button
                   className="font-semibold"
-                  disabled={status.estado === 'PARADO'}
+                  disabled={status.estado === 'PARADO' || status.estado === 'ANUNCIO'}
                   onClick={pularMusica}
                   size="sm"
                   variant="secondary"
                 >
                   ⏭ Pular Música
+                </Button>
+                <Button
+                  aria-pressed={Boolean(status.pausado)}
+                  className="font-semibold"
+                  onClick={alternarPausa}
+                  size="sm"
+                  variant={status.pausado ? 'default' : 'outline'}
+                >
+                  {status.pausado ? '▶ Retomar fila' : '⏸ Pausar entre músicas'}
                 </Button>
               </div>
             </div>
@@ -318,8 +422,16 @@ export default function KaraokeDashboard() {
             <Separator className="mb-4" />
 
             {/* Lista da Fila */}
-            <h4 className="mb-3 font-semibold">Próximos a cantar:</h4>
-            <ScrollArea className="flex-1 pr-4">
+            <h4 className="mb-3 font-semibold">
+              Próximos a cantar{' '}
+              <span className="font-normal text-muted-foreground text-sm">
+                ({status.fila.length})
+              </span>
+            </h4>
+            {/* min-h-0 é o que falta para um flex item de fato rolar: sem ele o ScrollArea cresce
+                com a lista, o overflow-hidden do CardContent corta o resto e a fila fica
+                sem alcance depois de umas 10 músicas. */}
+            <ScrollArea className="min-h-0 flex-1 pr-4">
               <div className="space-y-2 pb-4">
                 {status.fila.length === 0 ? (
                   <p className="mt-8 text-center text-muted-foreground text-sm">
@@ -345,6 +457,13 @@ export default function KaraokeDashboard() {
                               {musica.artista}
                             </p>
                           )}
+                        {/* Quem pediu (some quando foi o próprio operador que adicionou). */}
+                        {quemPediu(musica.nome) && (
+                          <p className="truncate text-muted-foreground/90 text-xs">
+                            🙋 pedida por {quemPediu(musica.nome)}
+                            {musica.tier === 2 ? ' · 2ª música dela' : ''}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))

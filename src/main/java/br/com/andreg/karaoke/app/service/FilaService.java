@@ -226,6 +226,19 @@ public class FilaService {
     public synchronized Pedido noAr() {
         return emCena;
     }
+    /**
+     * Devolve para a FRENTE da fila um pedido que já tinha saído dela.
+     *
+     * Caso de uso: a TV chamou a pessoa ("o próximo a brilhar vai ser X") e o operador apertou
+     * pausa nesses segundos. A pessoa não pode perder o lugar que já era dela por causa de um
+     * clique, então o pedido volta exatamente de onde saiu e {@code emCena} é desfeito.
+     */
+    public synchronized void devolverNoTopo(Pedido p) {
+        if (p == null) return;
+        fila.remove(p);
+        fila.add(0, p);
+        if (emCena == p) emCena = null;
+    }
 
     /** Devolve a música para o fim do seu andar (usada em "tirar do ar"/reordenar). */
     public synchronized void reenfileirarFim(Pedido p) {

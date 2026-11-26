@@ -324,3 +324,14 @@ mesclado:
    resto) e busca multi-termo sem acento. O próximo passo real seria tolerância a erro de
    digitação (Levenshtein em ~11.470 títulos tem custo de CPU e de índice) — deixei como
    pendência consciente, não fiz de uma hora para outra.
+
+## 10. O que veio depois disto (Fase 6)
+
+Depois que este trabalho foi ao `main` como `632be68`, pediram quatro ajustes curtos na mesma
+base: **rolar a fila do painel**, **mostrar o nome de quem pediu** (sem mostrar o do operador),
+**"O próximo a brilhar vai ser: fulano" na TV por uns 5 s antes de largar o vídeo** e um
+**botão de pausa entre músicas** que devolve a TV para a tela dos QR codes.
+
+Tudo que muda, por quê, o que foi medido e as decisões conscientes estão em
+[`MUDANCAS-FASE6.md`](MUDANCAS-FASE6.md). Nada do que está escrito aqui foi reescrito por causa
+disso — as seções 1 a 9 continuam valendo, inclusive as do token e dos três QRs.

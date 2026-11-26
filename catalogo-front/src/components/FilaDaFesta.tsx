@@ -96,8 +96,24 @@ export function FilaDaFesta({
             </p>
             <p className="truncate text-sm font-semibold text-foreground">{tocandoAgora.titulo}</p>
           </div>
+        ) : status?.anuncio ? (
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Na TV agora
+            </p>
+            <p className="truncate text-sm font-semibold text-foreground">
+              O próximo a brilhar vai ser: {status.anuncio.nome || 'alguém'}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {status.anuncio.titulo}
+            </p>
+          </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Ninguém no microfone agora.</p>
+          <p className="text-sm text-muted-foreground">
+            {status?.pausado
+              ? 'A fila está pausada: é só o anfitrião retomar.'
+              : 'Ninguém no microfone agora.'}
+          </p>
         )}
       </div>
 

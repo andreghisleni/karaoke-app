@@ -26,13 +26,24 @@ export interface Pedido {
   posicao: number
 }
 
+/** O aviso que a TV está mostrando agora ("O próximo a brilhar vai ser…"). */
+export interface AnuncioDaTv {
+  nome: string
+  titulo: string
+  artista?: string
+  codigo?: string
+}
 export interface StatusDaFila {
-  estado: 'PARADO' | 'TOCANDO' | 'PONTUACAO'
+  estado: 'PARADO' | 'TOCANDO' | 'PONTUACAO' | 'ANUNCIO'
   tocando: Pedido | null
   quemCanta: string | null
   fila: Pedido[]
   total: number
   maxPorPessoa: number
+  /** A TV chamando alguém: o celular mostra o mesmo que a TV. */
+  anuncio: AnuncioDaTv | null
+  /** Fila pausada pelo operador entre uma música e outra. */
+  pausado: boolean
 }
 
 export interface ResultadoPedido {
@@ -64,6 +75,8 @@ export function normalizarStatus(bruto: Record<string, unknown>): StatusDaFila {
     estado: (bruto.estado as StatusDaFila['estado']) ?? 'PARADO',
     tocando: ((bruto.tocando ?? bruto.musicaAtual) as Pedido | null) ?? null,
     quemCanta: (bruto.quemCanta as string | null) ?? null,
+    anuncio: (bruto.anuncio as AnuncioDaTv | null) ?? null,
+    pausado: Boolean(bruto.pausado),
     fila,
     total: typeof bruto.total === 'number' ? bruto.total : fila.length,
     maxPorPessoa: typeof bruto.maxPorPessoa === 'number' ? bruto.maxPorPessoa : 2,

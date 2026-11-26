@@ -248,6 +248,11 @@ public class ApiController {
             }
             int maximo = payload.path("maxPedidosPorPessoa").asInt(0);
             if (maximo >= 1 && maximo <= 10) configAtual.maxPedidosPorPessoa = maximo;
+            // Segundos do aviso na TV antes de largar o vídeo. 0 = sem aviso, entra direto.
+            if (payload.hasNonNull("anunciarProximoSegundos")) {
+                int aviso = payload.get("anunciarProximoSegundos").asInt(5);
+                configAtual.anunciarProximoSegundos = aviso < 0 ? 0 : Math.min(aviso, 30);
+            }
 
             // --- Wi-Fi da festa (QR 1) ---
             if (payload.hasNonNull("wifiSsid")) configAtual.wifiSsid = payload.get("wifiSsid").asText("").strip();
@@ -336,6 +341,10 @@ public class ApiController {
             corpo.put("estado", status.get("estado"));
             corpo.put("tocando", status.get("musicaAtual"));
             corpo.put("quemCanta", status.get("quemCanta"));
+            // O aviso que a TV está mostrando ("o próximo a brilhar vai ser X") e se a fila
+            // está pausada: o celular do convidado mostra a mesma verdade da sala sem pedir nada.
+            corpo.put("anuncio", status.get("anuncio"));
+            corpo.put("pausado", status.get("pausado"));
             corpo.put("fila", filaService.fila());
             corpo.put("total", filaService.tamanho());
             corpo.put("maxPorPessoa", filaService.getMaxPendentes());
@@ -406,7 +415,8 @@ public class ApiController {
         // ROTAS DE CONTROLE DA FILA E PLAYER
         // ==========================================
 
-        // 1. Retorna o status atual (o que tá tocando, a fila e a pontuação)
+        // 1. Retorna o status atual (o que tá tocando, a fila, a pontuação, o aviso da TV
+        // e se a fila está pausada) — obterStatus() já monta tudo isso.
         app.get("/api/player/status", ctx -> {
             ctx.json(playerService.obterStatus());
         });
@@ -442,6 +452,27 @@ public class ApiController {
         app.post("/api/player/next", ctx -> {
             playerService.pularMusica();
             ctx.result("Pulando para a próxima...");
+        });
+
+        // 4. Pausa ENTRE músicas: a que está no ar termina sozinha, a próxima fica esperando
+        // e a TV volta para a tela dos QR codes. Corpo vazio = alternar;
+        // {"pausado": true|false} = fixar (serve para automação e para o botão do painel).
+        app.post("/api/player/pausa", ctx -> {
+            Boolean desejado = null;
+            try {
+                JsonNode corpo = MAPPER.readTree(ctx.body());
+                if (corpo != null && corpo.hasNonNull("pausado")) desejado = corpo.get("pausado").asBoolean();
+            } catch (Exception semCorpo) {
+                desejado = null; // o botão do painel manda o corpo vazio de propósito
+            }
+            boolean agora = desejado == null
+                    ? playerService.alternarPausa()
+                    : playerService.definirPausa(desejado);
+            ctx.json(Map.of("pausado", agora, "mensagem", agora
+                    ? "Fila pausada: a TV voltou para os QR codes; a música do ar termina."
+                    : (playerService.estaTocando()
+                        ? "Fila retomada: a próxima entra quando esta terminar."
+                        : "Fila retomada: chamando o próximo na TV.")));
         });
 
         // ==========================================
@@ -507,6 +538,7 @@ public class ApiController {
             "/api/screens",
             "/api/player/add",
             "/api/player/next",
+            "/api/player/pausa",
             "/api/painel/info",
             "/api/painel/qrcode.png",
             "/api/painel/token");
@@ -605,6 +637,7 @@ public class ApiController {
         m.put("displayId", c.displayId);
         m.put("urlConvidado", c.urlConvidado == null ? "" : c.urlConvidado);
         m.put("maxPedidosPorPessoa", c.maxPedidosPorPessoa);
+        m.put("anunciarProximoSegundos", c.anunciarProximoSegundos);
         m.put("pinAdmin", c.pinAdmin == null || c.pinAdmin.isBlank() ? "" : "***");
         m.put("pinDefinido", c.pinAdmin != null && !c.pinAdmin.isBlank());
         // /api/config só é lida com o token do painel, então o token pode voltar no claro: a tela

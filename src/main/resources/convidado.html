@@ -266,6 +266,8 @@ var acervo = null;          // [[codigo, titulo, artista], ...] quando baixar
 var acervoBusca = null;     // mesma lista com o blob minúsculo sem acento
 var fila = [];
 var tocando = null;
+var anuncio = null;   /* o "O próximo a brilhar vai ser" que a TV está mostrando */
+var filaPausada = false;
 var quemCanta = "";
 var maxPorPessoa = 2;
 var buscando = false;
@@ -352,6 +354,8 @@ function aplicarFila(d) {
   fila = d.fila || [];
   maxPorPessoa = d.maxPorPessoa || 2;
   tocando = d.tocando || null;
+  anuncio = d.anuncio || null;
+  filaPausada = !!d.pausado;
   quemCanta = d.quemCanta || "";
   $("textoRegra").textContent = "Máximo " + maxPorPessoa + " músicas por vez: a primeira entra na frente e a segunda vai para o fim da fila.";
   desenharTocando();
@@ -377,7 +381,23 @@ function vezesUsadas() {
 
 function desenharTocando() {
   var c = $("cartaoTocando");
-  if (!tocando || !tocando.titulo) { c.hidden = true; return; }
+  if (!tocando || !tocando.titulo) {
+    /* Sem música no ar: se a TV está chamando alguém, o celular conta a mesma história. */
+    if (anuncio && anuncio.nome) {
+      c.hidden = false;
+      $("tocandoTitulo").textContent = "O próximo a brilhar: " + anuncio.nome;
+      $("tocandoSub").textContent = anuncio.titulo ? "vai cantar " + anuncio.titulo : "na TV agora";
+      return;
+    }
+    if (filaPausada) {
+      c.hidden = false;
+      $("tocandoTitulo").textContent = "Fila pausada";
+      $("tocandoSub").textContent = "o anfitrião retoma quando quiser";
+      return;
+    }
+    c.hidden = true;
+    return;
+  }
   c.hidden = false;
   $("tocandoTitulo").textContent = tocando.titulo;
   var sub = [tocando.artista && tocando.artista !== "Desconhecido" ? tocando.artista : "", tocando.codigo].filter(Boolean).join(" · ");

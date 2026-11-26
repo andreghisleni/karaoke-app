@@ -52,6 +52,7 @@ type Config = {
   displayId: string;
   urlConvidado: string;
   maxPedidosPorPessoa: number;
+  anunciarProximoSegundos: number;
   pinAdmin: string;
   pinDefinido: boolean;
   tokenPainel: string;
@@ -73,6 +74,7 @@ const PADRAO: Config = {
   displayId: '0',
   urlConvidado: '',
   maxPedidosPorPessoa: 2,
+  anunciarProximoSegundos: 5,
   pinAdmin: '',
   pinDefinido: false,
   tokenPainel: '',
@@ -155,6 +157,10 @@ export default function ConfigPage() {
         displayId: config.displayId,
         urlConvidado: config.urlConvidado,
         maxPedidosPorPessoa: Number(config.maxPedidosPorPessoa) || 1,
+        anunciarProximoSegundos: Math.max(
+          0,
+          Math.min(30, Number(config.anunciarProximoSegundos) || 0),
+        ),
         pinAdmin: config.pinAdmin,
         wifiSsid: config.wifiSsid,
         wifiSenha: config.wifiSenha,
@@ -380,6 +386,28 @@ export default function ConfigPage() {
               <p className='text-muted-foreground text-xs'>
                 A fila é em dois andares: a primeira música de cada pessoa fica na ordem de chegada
                 e as extras vão para trás de todo mundo.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="aviso-tv">Aviso na TV (segundos)</Label>
+              <Input
+                id="aviso-tv"
+                max={30}
+                min={0}
+                onChange={(e) =>
+                  trocar(
+                    'anunciarProximoSegundos',
+                    Number(e.target.value) as Config['anunciarProximoSegundos'],
+                  )
+                }
+                type="number"
+                value={config.anunciarProximoSegundos}
+              />
+              <p className='text-muted-foreground text-xs'>
+                Antes de largar o vídeo, a TV mostra “O próximo a brilhar vai ser:
+                {' '}<span className="font-semibold">o nome de quem pediu</span>” por esse tempo.
+                Zere para a música entrar direto, como antes.
               </p>
             </div>
           </div>

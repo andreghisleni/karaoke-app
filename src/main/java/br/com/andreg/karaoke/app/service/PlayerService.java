@@ -62,6 +62,22 @@ public class PlayerService {
 
     private Musica musicaAtual = null;
     private Pedido pedidoAtual = null;
+    /**
+     * Pedido que a TV está chamando agora ("o próximo a brilhar vai ser X"). Ele já saiu da fila
+     * (proxima() tira), então precisa ficar guardado aqui para o painel e para a página do
+     * convidado mostrarem a mesma coisa que a TV mostra durante os segundos do aviso.
+     */
+    private volatile Pedido pedidoAnunciado = null;
+    /** true enquanto o aviso está no ar: dois turnores não podem puxar a fila ao mesmo tempo. */
+    private volatile boolean turnoEmAndamento = false;
+    /**
+     * Carimbo do aviso em andamento. Aumentar este número é o jeito de dizer "aquele aviso já era":
+     * a thread que dorme os segundos do aviso confere ao acordar e não faz nada se ela foi cancelada
+     * (é o que acontece quando alguém aperta pausar durante os segundos do aviso).
+     */
+    private volatile int avisoGeracao = 0;
+    /** Pausa ENTRE músicas (botão do painel): a do ar termina, a próxima espera, a TV mostra os QRs. */
+    private volatile boolean pausado = false;
     private String estadoAtual = "PARADO";
     private int ultimaPontuacao = 0;
 
@@ -335,36 +351,154 @@ public class PlayerService {
      * Alguém entrou na fila: se estamos parados, já puxa a próxima.
      */
     public void verificarInicioAutomatico() {
-        if ("PARADO".equals(estadoAtual) && musicaAtual == null && !filaService.estaVazia()) {
+        if ("PARADO".equals(estadoAtual) && musicaAtual == null && !pausado && !filaService.estaVazia()) {
             tocarProxima();
         }
     }
 
+    /**
+     * Decide o próximo turno: pausa, tela de descanso, aviso na TV ou entrar direto no vídeo.
+     *
+     * O aviso não pode ser atropelado: quem chama é o {@link #filaService#proxima()}, que já tirou
+     * a pessoa da fila, e requisições do celular, o botão "Pular" e a nota de pontuação chamam este
+     * método em threads diferentes. {@link #turnoEmAndamento} garante um turno por vez; quem chega
+     * no meio espera o próximo turno (o aviso dura poucos segundos).
+     */
     public void tocarProxima() {
-        Pedido proximo = filaService.proxima();
-
-        if (proximo == null || proximo.musica == null) {
-            estadoAtual = "PARADO";
-            musicaAtual = null;
-            pedidoAtual = null;
-            vlcTocando = false; // --- NOVO --- : Liberta o NDI para a tela inicial!
-
-            SwingUtilities.invokeLater(() -> {
-                painelTv.setEstado("PARADO", 0, 0);
-                if (!isNdiMode && videoFrame != null) {
-                    cardLayout.show(painelPrincipal, "TELA_TV");
-                }
-            });
-            webSocketService.fazerBroadcast(obterStatus());
+        if (turnoEmAndamento) {
+            System.out.println("⏳ Tem um aviso no ar; este pedido espera o próximo turno.");
             return;
         }
 
+        if (pausado) {
+            mostrarDescanso();
+            return;
+        }
+
+        Pedido proximo = filaService.proxima();
+
+        if (proximo == null || proximo.musica == null) {
+            mostrarDescanso();
+            return;
+        }
+
+        int segundos = segundosDoAviso();
+        if (segundos <= 0) {
+            iniciarReproducao(proximo);
+            return;
+        }
+
+        turnoEmAndamento = true;
+        anunciarNaTv(proximo, segundos);
+
+        final Pedido chamado = proximo;
+        final int duracao = segundos;
+        final int geracao = avisoGeracao;
+        new Thread(() -> {
+            try {
+                Thread.sleep(duracao * 1000L);
+                if (geracao != avisoGeracao) {
+                    // A pausa no meio do aviso já devolveu esta pessoa para a fila; turno expirou.
+                    return;
+                }
+                pedidoAnunciado = null;
+                if (pausado) {
+                    // Pausaram justo nesses segundos: devolve o lugar da pessoa e mostra os QRs.
+                    filaService.devolverNoTopo(chamado);
+                    mostrarDescanso();
+                    return;
+                }
+                iniciarReproducao(chamado);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                // Se o VLC recusar o arquivo depois do aviso, a fila não pode travar: o turno é
+                // liberado no finally e a pessoa continua na condição em que ficou.
+                System.err.println("Erro ao largar a música depois do aviso: " + e.getMessage());
+                e.printStackTrace();
+            } finally {
+                if (geracao == avisoGeracao) {
+                    turnoEmAndamento = false;
+                }
+            }
+        }, "aviso-proximo").start();
+    }
+
+    /**
+     * Interrompe um aviso que está contando na TV: a pessoa volta para o topo da fila (não perdeu a
+     * vez) e a thread adormecida é desautorizada pelo carimbo. Chamado quando alguém pausa durante
+     * os segundos do aviso, para que o "retomar" repita a chamada inteira em vez de emendar no vídeo.
+     */
+    private void cancelarAvisoEmAndamento() {
+        Pedido emAviso = pedidoAnunciado;
+        avisoGeracao++;
+        pedidoAnunciado = null;
+        turnoEmAndamento = false;
+        if (emAviso != null) {
+            filaService.devolverNoTopo(emAviso);
+            System.out.println("↩ " + (emAviso.nome == null ? "O pedido" : emAviso.nome)
+                    + " volta para o topo da fila (pausa no meio do aviso na TV)");
+        }
+    }
+
+    /** Quantos segundos a TV mostra o aviso. 0 (ou negativo) = entra direto, como antes. */
+    private int segundosDoAviso() {
+        int configurado = configManager.getConfig().anunciarProximoSegundos;
+        if (configurado <= 0) return 0;
+        return Math.min(configurado, 30);
+    }
+
+    /** A tela de descanso (os QR codes) de volta, com a fila intacta. */
+    private void mostrarDescanso() {
+        estadoAtual = "PARADO";
+        musicaAtual = null;
+        pedidoAtual = null;
+        pedidoAnunciado = null;
+        vlcTocando = false; // --- NOVO --- : Liberta o NDI para a tela inicial!
+
+        SwingUtilities.invokeLater(() -> {
+            painelTv.setEstado("PARADO", 0, 0);
+            if (!isNdiMode && videoFrame != null) {
+                cardLayout.show(painelPrincipal, "TELA_TV");
+            }
+        });
+        webSocketService.fazerBroadcast(obterStatus());
+    }
+
+    /**
+     * Desenha "O próximo a brilhar vai ser: {@code <nome>}" na TV e conta para o painel/convidado
+     * pelo mesmo broadcast. Ainda não há som: o vídeo larga depois dos {@code segundos}.
+     */
+    private void anunciarNaTv(Pedido proximo, int segundos) {
+        pedidoAnunciado = proximo;
+        estadoAtual = "ANUNCIO";
+        musicaAtual = null;
+        vlcTocando = false;
+
+        final String quem = proximo.nome == null ? "" : proximo.nome;
+        final String oQue = proximo.titulo == null ? "" : proximo.titulo;
+
+        SwingUtilities.invokeLater(() -> {
+            painelTv.setAnuncio(quem, oQue, segundos * 1000L);
+            if (!isNdiMode && videoFrame != null) {
+                cardLayout.show(painelPrincipal, "TELA_TV");
+            }
+        });
+        System.out.println("🎙 Na TV: o próximo a brilhar vai ser " + quem + " — " + oQue);
+        webSocketService.fazerBroadcast(obterStatus());
+    }
+
+    /** Larga o vídeo do pedido que já foi chamado. É o corpo antigo do tocarProxima(). */
+    private void iniciarReproducao(Pedido proximo) {
         pedidoAtual = proximo;
         musicaAtual = proximo.musica;
         estadoAtual = "TOCANDO";
 
         if (!isNdiMode && videoFrame != null) {
-            SwingUtilities.invokeLater(() -> cardLayout.show(painelPrincipal, "TELA_VIDEO"));
+            SwingUtilities.invokeLater(() -> {
+                painelTv.setEstado("TOCANDO", 0, 0);
+                cardLayout.show(painelPrincipal, "TELA_VIDEO");
+            });
         }
 
         System.out.println("A reproduzir: " + musicaAtual.titulo + "  (pedido de " + proximo.nome + ")");
@@ -388,8 +522,61 @@ public class PlayerService {
     }
 
     public void pularMusica() {
+        if (turnoEmAndamento) {
+            // Tem alguém sendo chamado na TV e nada no ar: não há o que pular, e parar aqui
+            // atropelaria a pessoa que o aviso acabou de anunciar. O painel já desabilita o botão;
+            // esta guarda vale para quem chega pela rota de PIN (a tela de operador do celular).
+            System.out.println("⏳ Aviso na TV em andamento: 'pular' ignorado (nada no ar ainda).");
+            return;
+        }
         mediaPlayer.controls().stop();
         tocarProxima();
+    }
+
+    /**
+     * Pausa ENTRE músicas: não corta o que está no ar, só impede que a próxima comece. A TV volta
+     * para a tela dos QR codes e a fila continua igual — quem já pediu não perde o lugar.
+     */
+    public synchronized boolean definirPausa(boolean agora) {
+        if (pausado == agora) {
+            // idempotente: o painel pode reenviar o mesmo estado sem causar broadcast duplicado
+            return pausado;
+        }
+        pausado = agora;
+        if (pausado) {
+            if (pedidoAnunciado != null) {
+                cancelarAvisoEmAndamento();
+            }
+            System.out.println("⏸ Fila pausada"
+                    + (musicaAtual == null ? " (TV na tela dos QRs)" : " (a música do ar vai terminar)"));
+            if (musicaAtual == null) {
+                mostrarDescanso();
+            } else {
+                webSocketService.fazerBroadcast(obterStatus());
+            }
+        } else {
+            System.out.println("▶ Fila retomada.");
+            if (musicaAtual == null) {
+                webSocketService.fazerBroadcast(obterStatus());
+                verificarInicioAutomatico();
+            } else {
+                webSocketService.fazerBroadcast(obterStatus());
+            }
+        }
+        return pausado;
+    }
+
+    public boolean alternarPausa() {
+        return definirPausa(!pausado);
+    }
+
+    public boolean estaPausado() {
+        return pausado;
+    }
+
+    /** Tem música no ar agora (usado na mensagem do botão de pausa). */
+    public boolean estaTocando() {
+        return "TOCANDO".equals(estadoAtual);
     }
 
     public Map<String, Object> obterStatus() {
@@ -401,8 +588,22 @@ public class PlayerService {
         // exatamente como antes, e a tela do convidado lê nome/posicao/tier do mesmo payload.
         status.put("fila", filaService.fila());
         status.put("quemCanta", pedidoAtual == null ? null : pedidoAtual.nome);
+        // O que a TV está mostrando agora no aviso, e se a fila está pausada. O painel e a página
+        // do convidado leem daqui, então os três aparelhos contam a mesma história.
+        status.put("anuncio", pedidoAnunciado == null ? null : avisoParaJson(pedidoAnunciado));
+        status.put("pausado", pausado);
         status.put("maxPorPessoa", filaService.getMaxPendentes());
         return status;
+    }
+
+    /** Payload do aviso da TV: nome + o que a pessoa vai cantar, sem vazar nada de disco/IP. */
+    private static Map<String, Object> avisoParaJson(Pedido p) {
+        Map<String, Object> aviso = new HashMap<>();
+        aviso.put("nome", p.nome == null ? "" : p.nome);
+        aviso.put("titulo", p.titulo == null ? "" : p.titulo);
+        aviso.put("artista", p.artista == null ? "" : p.artista);
+        aviso.put("codigo", p.codigo == null ? "" : p.codigo);
+        return aviso;
     }
 
     public List<Map<String, String>> listarDispositivosAudio() {
@@ -516,6 +717,11 @@ public class PlayerService {
     private static class TvPanel extends JPanel {
         private String estado = "PARADO";
         private int pontuacao = 0;
+        // --- NOVO --- : o "O próximo a brilhar vai ser:" que entra antes do vídeo
+        private String nomeAnunciado = "";
+        private String tituloAnunciado = "";
+        private long duracaoAnuncioMs = 5000;
+        private long fimAnuncio = 0;
         
         private final javax.swing.Timer animTimer;
         private float tick = 0;
@@ -571,6 +777,10 @@ public class PlayerService {
         }
 
     public void setEstado(String estado, int pontuacao, int tempoSuspenseMs) {
+            if (!"ANUNCIO".equals(estado)) {
+                this.nomeAnunciado = "";
+                this.tituloAnunciado = "";
+            }
             this.estado = estado;
             this.pontuacao = pontuacao;
             this.tempoSuspenseAtual = tempoSuspenseMs;
@@ -580,6 +790,17 @@ public class PlayerService {
                 this.tempoInicioPontuacao = System.currentTimeMillis();
             }
             
+            repaint();
+        }
+
+        /** Mostra quem a festa vai chamar, com a barra do tempo que falta para o vídeo largar. */
+        public void setAnuncio(String nome, String titulo, long duracaoMs) {
+            this.nomeAnunciado = nome == null ? "" : nome;
+            this.tituloAnunciado = titulo == null ? "" : titulo;
+            this.duracaoAnuncioMs = Math.max(500L, duracaoMs);
+            this.fimAnuncio = System.currentTimeMillis() + this.duracaoAnuncioMs;
+            this.estado = "ANUNCIO";
+            this.tick = 0;
             repaint();
         }
 
@@ -823,8 +1044,76 @@ public class PlayerService {
                     String msg = pontuacao >= 95 ? "🎙️ NASCEU UMA ESTRELA!" : (pontuacao >= 85 ? "👏 MUITO BEM!" : "😅 VALEU A INTENÇÃO!");
                     g2d.drawString(msg, centerX - (g2d.getFontMetrics().stringWidth(msg) / 2), centerY + 280 + offsetY);
                 }
+            } else if ("ANUNCIO".equals(estado)) {
+                desenhaAvisoDoProximo(g2d, w, centerX, centerY);
             }
             g2d.dispose();
+        }
+
+        /**
+         * O "chamando a pessoa" antes do vídeo: o mesmo fundo animado da tela de descanso, o nome
+         * em tamanho grande (encolhendo até caber, porque nome de 40 caracteres não pode vazar da
+         * TV) e a barra do tempo que falta para o videoclipe começar.
+         */
+        private void desenhaAvisoDoProximo(Graphics2D g2d, int w, int centerX, int centerY) {
+            float alpha = (float) ((Math.sin(tick) + 1) / 4);
+            Color[] coresFundo = {new Color(59, 130, 246, (int) (alpha * 110)), new Color(0, 0, 0, 0)};
+            g2d.setPaint(new RadialGradientPaint(new Point2D.Float(centerX, centerY), 620,
+                    new float[]{0.0f, 1.0f}, coresFundo));
+            g2d.fillRect(0, 0, w, getHeight());
+
+            int disponivel = (int) (w * 0.88);
+
+            g2d.setFont(new Font("SansSerif", Font.PLAIN, 42));
+            g2d.setPaint(new Color(156, 163, 175));
+            String chamada = "O próximo a brilhar vai ser:";
+            g2d.drawString(chamada, centerX - g2d.getFontMetrics().stringWidth(chamada) / 2, centerY - 170);
+
+            String nome = nomeAnunciado.isEmpty() ? "alguém" : nomeAnunciado;
+            int tamanho = 132;
+            g2d.setFont(new Font("SansSerif", Font.BOLD, tamanho));
+            while (g2d.getFontMetrics().stringWidth(nome) > disponivel && tamanho > 44) {
+                tamanho -= 4;
+                g2d.setFont(new Font("SansSerif", Font.BOLD, tamanho));
+            }
+            int larguraNome = g2d.getFontMetrics().stringWidth(nome);
+            int xNome = centerX - larguraNome / 2;
+            int yNome = centerY + 10;
+            g2d.setPaint(new GradientPaint(xNome, yNome - tamanho, new Color(96, 165, 250),
+                    xNome + larguraNome, yNome, new Color(168, 85, 247)));
+            g2d.drawString(nome, xNome, yNome);
+
+            if (!tituloAnunciado.isEmpty()) {
+                String titulo = encurtarNaLargura(g2d, "vai cantar: " + tituloAnunciado,
+                        new Font("SansSerif", Font.ITALIC, 46), disponivel);
+                int larguraTitulo = g2d.getFontMetrics().stringWidth(titulo);
+                g2d.setPaint(new Color(226, 232, 240));
+                g2d.drawString(titulo, centerX - larguraTitulo / 2, centerY + 110);
+            }
+
+            // Barra do tempo que falta: a festa vê o aviso acabar junto com o operador.
+            long restante = fimAnuncio - System.currentTimeMillis();
+            double fraccao = duracaoAnuncioMs <= 0 ? 0d
+                    : Math.max(0d, Math.min(1d, restante / (double) duracaoAnuncioMs));
+            int barraW = Math.min(560, (int) (w * 0.5));
+            int barraH = 12;
+            int xBarra = centerX - barraW / 2;
+            int yBarra = centerY + 180;
+            g2d.setColor(new Color(255, 255, 255, 40));
+            g2d.fillRoundRect(xBarra, yBarra, barraW, barraH, 12, 12);
+            g2d.setColor(new Color(168, 85, 247));
+            g2d.fillRoundRect(xBarra, yBarra, (int) (barraW * fraccao), barraH, 12, 12);
+        }
+
+        /** Encolhe o texto com reticências até caber na largura da TV (nome/título comprido). */
+        private String encurtarNaLargura(Graphics2D g2d, String texto, Font fonte, int larguraMaxima) {
+            g2d.setFont(fonte);
+            if (g2d.getFontMetrics().stringWidth(texto) <= larguraMaxima) return texto;
+            String curto = texto;
+            while (!curto.isEmpty() && g2d.getFontMetrics().stringWidth(curto + "…") > larguraMaxima) {
+                curto = curto.substring(0, curto.length() - 1);
+            }
+            return curto + "…";
         }
     }
 }

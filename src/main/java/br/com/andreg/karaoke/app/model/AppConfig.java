@@ -63,4 +63,10 @@ public class AppConfig {
     public boolean mostrarQrCatalogoLocal = true;
     /** Mostrar o QR do catálogo online. */
     public boolean mostrarQrCatalogoOnline = true;
+
+    /**
+     * Quantos segundos a TV mostra "o próximo a brilhar vai ser: {@code <nome>}" antes de largar o
+     * vídeo. {@code 0} desliga o aviso (a música entra direto, como fazia antes).
+     */
+    public int anunciarProximoSegundos = 5;
 }
