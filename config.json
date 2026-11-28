@@ -1,7 +1,7 @@
 {
   "pastas" : [ "/home/andre/Music/PASTA 10", "/home/andre/Videos/karaoke-test", "/media/andre/5C824C8A5996E5FF/Karaokê Vs/musicas" ],
   "audioDeviceId" : "alsa_output.pci-0000_09_00.4.analog-stereo",
-  "videoOutputMode" : "NDI",
+  "videoOutputMode" : "Monitor",
   "displayId" : "1",
   "pinAdmin" : "",
   "urlConvidado" : "http://192.168.0.72:7000/p",
@@ -14,5 +14,10 @@
   "mostrarQrWifi" : true,
   "mostrarQrCatalogoLocal" : true,
   "mostrarQrCatalogoOnline" : true,
-  "anunciarProximoSegundos" : 5
+  "anunciarProximoSegundos" : 5,
+  "zoomTelaEspera" : 100,
+  "zoomProxCantar" : 100,
+  "jackRotearCanais" : false,
+  "jackClienteKaraoke" : "",
+  "jackCanaisKaraoke" : ""
 }

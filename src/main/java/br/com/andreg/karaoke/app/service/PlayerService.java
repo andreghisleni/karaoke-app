@@ -109,6 +109,7 @@ public class PlayerService {
         // Se for janela, ele vai pra janela. Se for NDI, ele renderiza na memória.
         painelTv = new TvPanel(salaService, qrSalaService);
         painelTv.setSize(1920, 1080); // Forçamos o tamanho Full HD na memória
+        painelTv.definirZoom(config.zoomTelaEspera, config.zoomProxCantar);
 
         if (isNdiMode) {
             System.out.println("A iniciar motor em modo NDI DIRETO (Devolay)...");
@@ -529,7 +530,34 @@ public class PlayerService {
             }).start();
         }
 
+        // Com o roteamento por canal ligado (mesa em JACK/PipeWire), o stream desta música ainda
+        // não existe no grafo logo depois do play(): esperamos um pouco e religamos no fio seguinte.
+        rotearCanaisSeLigado();
+
         webSocketService.fazerBroadcast(obterStatus());
+    }
+
+    /**
+     * Reencaminha as saídas para os canais da mesa, se o interruptor estiver ligado. Roda fora da
+     * thread do player: falha em pw-link/jack_connect nenhum pode segurar a música de entrar.
+     */
+    private void rotearCanaisSeLigado() {
+        AppConfig c = configManager.getConfig();
+        if (!c.jackRotearCanais) return;
+        new Thread(() -> {
+            try {
+                Thread.sleep(700);
+                for (String linha : RoteamentoAudioService.aplicar(c)) System.out.println(linha);
+            } catch (Exception erro) {
+                System.err.println("⚠️ Roteio de canais não rodou: " + erro.getMessage());
+            }
+        }, "roteio-canais").start();
+    }
+
+    /** A tela de Configurações acabou de salvar: aplicar o zoom novo nas duas telas da TV. */
+    public void aplicarZoomTelas() {
+        AppConfig c = configManager.getConfig();
+        if (painelTv != null) painelTv.definirZoom(c.zoomTelaEspera, c.zoomProxCantar);
     }
 
     public void pularMusica() {
@@ -733,7 +761,15 @@ public class PlayerService {
         private String tituloAnunciado = "";
         private long duracaoAnuncioMs = 5000;
         private long fimAnuncio = 0;
-        
+
+        /**
+         * Zoom das duas telas desenhadas aqui, em %. Vem da tela de Configurações e é aplicado ao
+         * vivo. 100 = o tamanho de sempre. Sem teto, porque a mesma instalação serve um projetor de
+         * sala e um monitor de 32": o que muda é o tamanho físico do alvo, não o desenho.
+         */
+        private int zoomEspera = 100;
+        private int zoomProx = 100;
+
         private final javax.swing.Timer animTimer;
         private float tick = 0;
 
@@ -785,6 +821,35 @@ public class PlayerService {
                 repaint();
             });
             animTimer.start();
+        }
+
+        /** Recebe o zoom salvo na Configurações e já redesenha (a TV é um Timer, aparece na hora). */
+        void definirZoom(int espera, int proxCantar) {
+            int novoEspera = normalizarZoom(espera);
+            int novoProx = normalizarZoom(proxCantar);
+            if (novoEspera == zoomEspera && novoProx == zoomProx) return;
+            zoomEspera = novoEspera;
+            zoomProx = novoProx;
+            repaint();
+        }
+
+        /** Sem limite superior de propósito; só não deixamos a tela sumir (0 ou negativo). */
+        private static int normalizarZoom(int valor) {
+            if (valor < 1) return 100;
+            return Math.min(valor, 1000);
+        }
+
+        /**
+         * Escala em torno do centro da TV: fonte, QR e espaçamentos crescem juntos, sem ninguém
+         * precisar recalcular posição por posição. O fundo é desenhado ANTES, do tamanho real da
+         * tela, então aumentar o conteúdo nunca deixa borda preta.
+         */
+        private static void aplicarZoom(Graphics2D g2d, int percentual, int centerX, int centerY) {
+            if (percentual == 100) return;
+            double fator = percentual / 100d;
+            g2d.translate(centerX, centerY);
+            g2d.scale(fator, fator);
+            g2d.translate(-centerX, -centerY);
         }
 
     public void setEstado(String estado, int pontuacao, int tempoSuspenseMs) {
@@ -961,6 +1026,10 @@ public class PlayerService {
                 g2d.setPaint(rgp);
                 g2d.fillRect(0, 0, w, h);
 
+                // O fundo é do tamanho da TV; tudo abaixo entra escalado pelo zoom da Configurações.
+                java.awt.geom.AffineTransform semZoom = g2d.getTransform();
+                aplicarZoom(g2d, zoomEspera, centerX, centerY);
+
                 // Título
                 Font fontTitle = new Font("SansSerif", Font.BOLD, 120);
                 g2d.setFont(fontTitle);
@@ -1007,6 +1076,7 @@ public class PlayerService {
                         g2d.drawString(urlDoQr, centerX - (urlW / 2), qrY + qrSize + 112);
                     }
                 }
+                g2d.setTransform(semZoom);
 
             } else if ("PONTUACAO".equals(estado)) {
                 // ... (O código da PONTUAÇÃO continua exatamente igual ao que estava aqui)
@@ -1073,7 +1143,13 @@ public class PlayerService {
                     new float[]{0.0f, 1.0f}, coresFundo));
             g2d.fillRect(0, 0, w, getHeight());
 
-            int disponivel = (int) (w * 0.88);
+            // Fundo no tamanho real, conteúdo no zoom escolhido. O "disponível" é dividido pelo
+            // fator de propósito: nome comprido continua encostado em 88% da LARGURA FÍSICA da TV,
+            // senão um zoom de 150% faria o nome vazar da tela.
+            java.awt.geom.AffineTransform semZoom = g2d.getTransform();
+            int fatorZoom = normalizarZoom(zoomProx);
+            aplicarZoom(g2d, fatorZoom, centerX, centerY);
+            int disponivel = (int) Math.round((w * 0.88) / (fatorZoom / 100d));
 
             g2d.setFont(new Font("SansSerif", Font.PLAIN, 42));
             g2d.setPaint(new Color(156, 163, 175));
@@ -1114,6 +1190,7 @@ public class PlayerService {
             g2d.fillRoundRect(xBarra, yBarra, barraW, barraH, 12, 12);
             g2d.setColor(new Color(168, 85, 247));
             g2d.fillRoundRect(xBarra, yBarra, (int) (barraW * fraccao), barraH, 12, 12);
+            g2d.setTransform(semZoom);
         }
 
         /** Encolhe o texto com reticências até caber na largura da TV (nome/título comprido). */

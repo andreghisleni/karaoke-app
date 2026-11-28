@@ -69,4 +69,30 @@ public class AppConfig {
      * vídeo. {@code 0} desliga o aviso (a música entra direto, como fazia antes).
      */
     public int anunciarProximoSegundos = 5;
+
+    /**
+     * Zoom da tela de espera (a dos QR codes), em %. 100 = exatamente como era antes.
+     * Sem teto de propósito: projetor pequeno pede mais, monitor de operador pede menos.
+     * O app só trava o mínimo em 1% (0 ou negativo apagaria a tela).
+     */
+    public int zoomTelaEspera = 100;
+
+    /** Zoom da tela "O próximo a brilhar vai ser: Fulano", em %. Mesmo limite baixo de 1%. */
+    public int zoomProxCantar = 100;
+
+    // --- roteamento de canais quando a mesa (XR18) entra por JACK ou PipeWire ---
+    /**
+     * Ligado = ao salvar a Configurações e a cada música que começa, o app religa AS PRÓPRIAS
+     * saídas nos canais abaixo. Desligado (padrão) = nada é tocado, o som vai para o dispositivo
+     * escolhido na mesma tela, como sempre foi.
+     */
+    public boolean jackRotearCanais = false;
+    /** Pedaço do nome do cliente desta aplicação no grafo (ex.: "VLC", "karaoke"). Vazio = tenta achar sozinho. */
+    public String jackClienteKaraoke = "";
+    /**
+     * Canais de destino deste app, separados por vírgula. Ex.: "5,6" para mandar em estéreo nos
+     * 5 e 6. Só as SAÍDAS DESTA APLICAÇÃO são mexidas: nenhum outro programa do grafo (Mixxx,
+     * navegador) é tocado — quem roteia o resto da mesa é o próprio programa.
+     */
+    public String jackCanaisKaraoke = "";
 }

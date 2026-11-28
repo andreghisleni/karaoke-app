@@ -13,6 +13,7 @@ import br.com.andreg.karaoke.app.service.PlayerService;
 import br.com.andreg.karaoke.app.service.SalaService;
 import br.com.andreg.karaoke.app.service.TokenPainelService;
 import br.com.andreg.karaoke.app.service.QrSalaService;
+import br.com.andreg.karaoke.app.service.RoteamentoAudioService;
 import br.com.andreg.karaoke.app.service.WebSocketService;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -254,6 +255,27 @@ public class ApiController {
                 configAtual.anunciarProximoSegundos = aviso < 0 ? 0 : Math.min(aviso, 30);
             }
 
+            // --- zoom das duas telas da TV ---
+            // Sem teto de propósito: o mesmo app serve um projetor de sala e um monitor de 32".
+            // O piso é 1, porque 0% apagaria a tela e campo vazio no form volta como 100.
+            if (payload.hasNonNull("zoomTelaEspera")) {
+                configAtual.zoomTelaEspera = lerZoom(payload.get("zoomTelaEspera"));
+            }
+            if (payload.hasNonNull("zoomProxCantar")) {
+                configAtual.zoomProxCantar = lerZoom(payload.get("zoomProxCantar"));
+            }
+
+            // --- roteamento de canais na mesa (mesa entrando por JACK/PipeWire) ---
+            if (payload.hasNonNull("jackRotearCanais")) {
+                configAtual.jackRotearCanais = payload.get("jackRotearCanais").asBoolean(false);
+            }
+            if (payload.hasNonNull("jackClienteKaraoke")) {
+                configAtual.jackClienteKaraoke = textoCurto(payload.get("jackClienteKaraoke"));
+            }
+            if (payload.hasNonNull("jackCanaisKaraoke")) {
+                configAtual.jackCanaisKaraoke = textoCurto(payload.get("jackCanaisKaraoke"));
+            }
+
             // --- Wi-Fi da festa (QR 1) ---
             if (payload.hasNonNull("wifiSsid")) configAtual.wifiSsid = payload.get("wifiSsid").asText("").strip();
             if (payload.hasNonNull("wifiSenha")) configAtual.wifiSenha = payload.get("wifiSenha").asText("");
@@ -321,6 +343,48 @@ public class ApiController {
 
         app.get("/api/audio-devices", ctx -> {
             ctx.json(playerService.listarDispositivosAudio());
+        });
+
+        /**
+         * O grafo de áudio da mesa (XR18 e afins) só interessa a quem está no painel: tudo embaixo
+         * de /api/painel/ já exige token por construção, e um celular no salão não tem o que fazer
+         * com a lista de portas do JACK.
+         */
+        app.get("/api/painel/audio/portas", ctx -> {
+            ctx.json(RoteamentoAudioService.inventario());
+        });
+
+        /** Religa as rotas sem esperar a próxima música: é o botão "Aplicar rotas agora". */
+        app.post("/api/painel/audio/rotear", ctx -> {
+            // A tela manda o que está digitado e ainda não foi salvo: dá para conferir o par de
+            // canais na mesa antes de gravar. Sem corpo (ou corpo quebrado) = roteia o config.json.
+            AppConfig paraTestar = configManager.getConfig();
+            JsonNode corpo;
+            try {
+                String texto = ctx.body();
+                corpo = texto == null || texto.isBlank() ? null : MAPPER.readTree(texto);
+            } catch (Exception corpoInvalido) {
+                corpo = null;
+            }
+            // Só encaro como "testa do meu jeito" se o corpo trouxer campo de rota algum: um POST
+            // sem corpo nenhum (ou um {}) tem que obedecer o que está gravado, inclusive o
+            // interruptor desligado.
+            boolean veioRota = corpo != null && corpo.isObject() && (corpo.has("jackClienteKaraoke")
+                    || corpo.has("jackCanaisKaraoke"));
+            if (veioRota) {
+                AppConfig atual = paraTestar;
+                paraTestar = new AppConfig();
+                // esta rota não escreve em lugar nenhum: é uma cópia só para religar agora
+                paraTestar.jackRotearCanais = true;
+                paraTestar.jackClienteKaraoke = corpo.path("jackClienteKaraoke")
+                        .asText(atual.jackClienteKaraoke).strip();
+                paraTestar.jackCanaisKaraoke = corpo.path("jackCanaisKaraoke")
+                        .asText(atual.jackCanaisKaraoke).strip();
+            }
+
+            List<String> acoes = RoteamentoAudioService.aplicar(paraTestar);
+            acoes.forEach(System.out::println);
+            ctx.json(Map.of("ferramenta", RoteamentoAudioService.ferramenta(), "acoes", acoes));
         });
 
         app.get("/api/screens", ctx -> {
@@ -638,6 +702,11 @@ public class ApiController {
         m.put("urlConvidado", c.urlConvidado == null ? "" : c.urlConvidado);
         m.put("maxPedidosPorPessoa", c.maxPedidosPorPessoa);
         m.put("anunciarProximoSegundos", c.anunciarProximoSegundos);
+        m.put("zoomTelaEspera", c.zoomTelaEspera);
+        m.put("zoomProxCantar", c.zoomProxCantar);
+        m.put("jackRotearCanais", c.jackRotearCanais);
+        m.put("jackClienteKaraoke", c.jackClienteKaraoke == null ? "" : c.jackClienteKaraoke);
+        m.put("jackCanaisKaraoke", c.jackCanaisKaraoke == null ? "" : c.jackCanaisKaraoke);
         m.put("pinAdmin", c.pinAdmin == null || c.pinAdmin.isBlank() ? "" : "***");
         m.put("pinDefinido", c.pinAdmin != null && !c.pinAdmin.isBlank());
         // /api/config só é lida com o token do painel, então o token pode voltar no claro: a tela
@@ -662,6 +731,32 @@ public class ApiController {
         salaService.setUrlForcada(c.urlConvidado);
         // pode ter vindo editado no config.json junto com o POST
         tokenService.recarregar();
+        // A TV é redesenhada o tempo todo (é um Timer), então aplicar o zoom é só passar o número.
+        playerService.aplicarZoomTelas();
+        // Mesa com canais definidos à mão: religar na hora, sem esperar a próxima música começar.
+        if (c.jackRotearCanais) {
+            new Thread(() -> RoteamentoAudioService.aplicar(c).forEach(System.out::println),
+                    "roteio-canais-config").start();
+        }
+    }
+
+    /** Campo de zoom: aceita 1..1000 e volta para 100 no que não é número (campo vazio incluso). */
+    private static int lerZoom(JsonNode node) {
+        if (node == null || node.isNull()) return 100;
+        int valor;
+        try {
+            valor = node.isNumber() ? node.asInt() : Integer.parseInt(node.asText("").strip());
+        } catch (NumberFormatException textoFora) {
+            return 100;
+        }
+        if (valor < 1) return 100;
+        return Math.min(valor, 1000);
+    }
+
+    /** Nome de cliente/canais: sem quebra de linha e estourando em 120 caracteres. */
+    private static String textoCurto(JsonNode node) {
+        String valor = node.asText("").replace("\n", " ").replace("\r", " ").strip();
+        return valor.length() > 120 ? valor.substring(0, 120) : valor;
     }
 
     /**
